@@ -28,6 +28,7 @@ export type Database = {
           hunter_stake: number | null
           hunter_won: boolean | null
           id: string
+          is_bot_game: boolean
           puzzle_fields: Json | null
           role_mode: Database["public"]["Enums"]["game_role"]
           solved_at: number | null
@@ -48,6 +49,7 @@ export type Database = {
           hunter_stake?: number | null
           hunter_won?: boolean | null
           id?: string
+          is_bot_game?: boolean
           puzzle_fields?: Json | null
           role_mode?: Database["public"]["Enums"]["game_role"]
           solved_at?: number | null
@@ -68,6 +70,7 @@ export type Database = {
           hunter_stake?: number | null
           hunter_won?: boolean | null
           id?: string
+          is_bot_game?: boolean
           puzzle_fields?: Json | null
           role_mode?: Database["public"]["Enums"]["game_role"]
           solved_at?: number | null
@@ -155,6 +158,7 @@ export type Database = {
           hunted_points: number | null
           hunter_points: number | null
           id: string
+          is_bot: boolean
           tapestry_id: string | null
           total_sol_earned: number | null
           total_sol_staked: number | null
@@ -178,6 +182,7 @@ export type Database = {
           hunted_points?: number | null
           hunter_points?: number | null
           id?: string
+          is_bot?: boolean
           tapestry_id?: string | null
           total_sol_earned?: number | null
           total_sol_staked?: number | null
@@ -201,6 +206,7 @@ export type Database = {
           hunted_points?: number | null
           hunter_points?: number | null
           id?: string
+          is_bot?: boolean
           tapestry_id?: string | null
           total_sol_earned?: number | null
           total_sol_staked?: number | null
