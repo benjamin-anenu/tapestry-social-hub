@@ -133,7 +133,7 @@ const GameArena = ({ gameId, role, isBot, walletAddress }: GameArenaProps) => {
   }, [game?.status, gameId]);
 
   const handleSendChat = useCallback(async (text: string) => {
-    if (sendingChat) return;
+    if (sendingChat || game?.status === "completed") return;
     setSendingChat(true);
     try {
       await supabase.functions.invoke("player-chat", {
@@ -144,9 +144,11 @@ const GameArena = ({ gameId, role, isBot, walletAddress }: GameArenaProps) => {
     } finally {
       setSendingChat(false);
     }
-  }, [gameId, sendingChat, values]);
+  }, [gameId, sendingChat, values, game?.status]);
 
   const handleSubmit = async () => {
+    if (game?.status === "completed") return;
+    
     const allCorrect = puzzleFields
       .filter((f) => f.isRequired)
       .every((f) => values[f.id]?.toLowerCase().trim() === f.answer.toLowerCase());
@@ -165,10 +167,12 @@ const GameArena = ({ gameId, role, isBot, walletAddress }: GameArenaProps) => {
     } else {
       setWrongGuess(true);
       setTimeout(() => setWrongGuess(false), 600);
-      // Notify bot about wrong guess so it can react
-      supabase.functions.invoke("player-chat", {
-        body: { gameId, message: "__WRONG_GUESS__", puzzleValues: values },
-      }).catch(() => {});
+      // Notify bot about wrong guess so it can react (ignore errors silently)
+      if (game?.status !== "completed") {
+        supabase.functions.invoke("player-chat", {
+          body: { gameId, message: "__WRONG_GUESS__", puzzleValues: values },
+        }).catch(() => {});
+      }
     }
   };
 
