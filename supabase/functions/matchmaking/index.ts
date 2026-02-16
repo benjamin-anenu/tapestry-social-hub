@@ -17,29 +17,38 @@ serve(async (req) => {
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, serviceKey);
 
-    const { profileId, walletAddress, role, stakeAmount } = await req.json();
-    if (!profileId || !role || !walletAddress) {
-      return new Response(JSON.stringify({ error: "profileId, walletAddress, and role are required" }), {
+    const { walletAddress, role, stakeAmount } = await req.json();
+    if (!role || !walletAddress) {
+      return new Response(JSON.stringify({ error: "walletAddress and role are required" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Verify the profile exists and matches the wallet
-    const { data: profile, error: profileError } = await supabase
+    // Find or create profile by wallet address
+    let { data: profile } = await supabase
       .from("profiles")
       .select("id, user_id")
-      .eq("id", profileId)
       .eq("wallet_address", walletAddress)
       .maybeSingle();
 
-    if (profileError || !profile) {
-      return new Response(JSON.stringify({ error: "Profile not found for this wallet" }), {
-        status: 403,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    if (!profile) {
+      // Auto-create a profile for this wallet
+      const { data: newProfile, error: createErr } = await supabase
+        .from("profiles")
+        .insert({
+          wallet_address: walletAddress,
+          user_id: crypto.randomUUID(),
+          username: walletAddress.slice(0, 8),
+        })
+        .select("id, user_id")
+        .single();
+
+      if (createErr) throw createErr;
+      profile = newProfile;
     }
 
+    const profileId = profile.id;
     const userId = profile.user_id;
 
     // Insert into queue
