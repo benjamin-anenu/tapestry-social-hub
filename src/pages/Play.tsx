@@ -1,46 +1,149 @@
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
-import { Wallet, ArrowLeft } from "lucide-react";
+import { useWallet } from "@solana/wallet-adapter-react";
+import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
+import { motion, AnimatePresence } from "framer-motion";
+import { ArrowLeft, Loader2, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useTapestryIdentity } from "@/hooks/useTapestryIdentity";
+import IdentityCard from "@/components/play/IdentityCard";
+import CreateTapestryProfile from "@/components/play/CreateTapestryProfile";
+import PlayLobby from "@/components/play/PlayLobby";
+
+type Phase = "connect" | "identity" | "lobby";
 
 const Play = () => {
   const navigate = useNavigate();
+  const { publicKey, connected } = useWallet();
+  const walletAddress = publicKey?.toBase58() ?? null;
+  const { profile, isLoading, error } = useTapestryIdentity(walletAddress);
+  const [phase, setPhase] = useState<Phase>("connect");
+  const [profileCreated, setProfileCreated] = useState(false);
+
+  // Auto-advance when wallet connects
+  useEffect(() => {
+    if (connected && walletAddress && phase === "connect") {
+      setPhase("identity");
+    }
+    if (!connected) {
+      setPhase("connect");
+    }
+  }, [connected, walletAddress, phase]);
+
+  // Re-fetch after profile creation
+  const { profile: refreshedProfile, isLoading: refreshLoading } = useTapestryIdentity(
+    profileCreated ? walletAddress : null
+  );
+  const activeProfile = profileCreated ? refreshedProfile : profile;
+  const loading = profileCreated ? refreshLoading : isLoading;
+
+  const hasProfile = !!activeProfile?.profile?.username || !!activeProfile?.username;
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-background px-6">
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex max-w-md flex-col items-center gap-6 text-center"
-      >
-        <div
-          className="flex h-20 w-20 items-center justify-center rounded-3xl shadow-lg"
-          style={{ backgroundImage: "var(--gradient-primary)" }}
-        >
-          <Wallet className="h-10 w-10 text-primary-foreground" />
-        </div>
-        <h1 className="font-display text-4xl font-bold text-foreground">Connect Wallet</h1>
-        <p className="text-muted-foreground leading-relaxed">
-          Connect your Phantom or Solflare wallet to play for real.
-          Your Tapestry identity will be loaded automatically.
-        </p>
-        <Button
-          size="lg"
-          className="h-14 w-full rounded-2xl font-display text-lg font-semibold shadow-lg"
-          style={{ backgroundImage: "var(--gradient-primary)" }}
-          disabled
-        >
-          Connect Wallet (Coming Soon)
-        </Button>
+    <div className="relative flex min-h-screen flex-col items-center bg-background grid-bg overflow-hidden scanlines">
+      {/* Ambient */}
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute -top-40 left-1/2 h-[600px] w-[600px] -translate-x-1/2 rounded-full bg-primary/5 blur-[150px]" />
+      </div>
+
+      <div className="relative z-10 flex w-full max-w-lg flex-1 flex-col items-center justify-center gap-8 px-6 py-16">
+        <AnimatePresence mode="wait">
+          {/* Phase 1: Connect Wallet */}
+          {phase === "connect" && (
+            <motion.div
+              key="connect"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="flex flex-col items-center gap-6 text-center"
+            >
+              <h1 className="font-display text-4xl font-bold text-foreground">
+                Connect <span className="text-primary text-glow-blue">Wallet</span>
+              </h1>
+              <p className="font-mono text-sm text-muted-foreground leading-relaxed">
+                Connect your Phantom or Solflare wallet to play for real on devnet.
+              </p>
+              <WalletMultiButton />
+            </motion.div>
+          )}
+
+          {/* Phase 2: Identity */}
+          {phase === "identity" && walletAddress && (
+            <motion.div
+              key="identity"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="flex flex-col items-center gap-6"
+            >
+              {loading && (
+                <div className="flex flex-col items-center gap-3">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  <p className="font-mono text-sm text-muted-foreground">Scanning Tapestry graph...</p>
+                </div>
+              )}
+
+              {!loading && error && (
+                <p className="font-mono text-sm text-destructive">{error}</p>
+              )}
+
+              {!loading && !error && hasProfile && activeProfile && (
+                <>
+                  <IdentityCard profile={activeProfile} walletAddress={walletAddress} />
+                  <Button
+                    onClick={() => setPhase("lobby")}
+                    className="h-14 w-full max-w-sm rounded-xl font-display text-lg font-bold shadow-lg glow-blue"
+                    style={{ backgroundImage: "var(--gradient-primary)" }}
+                  >
+                    Enter the Arena
+                    <ArrowRight className="ml-2 h-5 w-5" />
+                  </Button>
+                </>
+              )}
+
+              {!loading && !error && !hasProfile && (
+                <CreateTapestryProfile
+                  walletAddress={walletAddress}
+                  onCreated={() => setProfileCreated(true)}
+                />
+              )}
+            </motion.div>
+          )}
+
+          {/* Phase 3: Lobby */}
+          {phase === "lobby" && activeProfile && (
+            <motion.div
+              key="lobby"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="flex flex-col items-center gap-6"
+            >
+              <h2 className="font-display text-3xl font-bold text-foreground">
+                Choose Your <span className="text-primary text-glow-blue">Role</span>
+              </h2>
+              <PlayLobby
+                profile={activeProfile}
+                profileId={(activeProfile.profile?.id as string) ?? ""}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Back button */}
         <Button
           variant="ghost"
-          onClick={() => navigate("/")}
+          onClick={() => {
+            if (phase === "lobby") setPhase("identity");
+            else if (phase === "identity") setPhase("connect");
+            else navigate("/");
+          }}
           className="text-muted-foreground"
         >
           <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to Home
+          {phase === "connect" ? "Back to Home" : "Back"}
         </Button>
-      </motion.div>
+      </div>
     </div>
   );
 };
