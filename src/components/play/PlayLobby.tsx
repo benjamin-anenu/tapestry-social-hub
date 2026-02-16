@@ -26,6 +26,7 @@ const PlayLobby = ({ profile, profileId, walletAddress }: PlayLobbyProps) => {
   const [searching, setSearching] = useState(false);
   const [matchStatus, setMatchStatus] = useState<string | null>(null);
   const [queueId, setQueueId] = useState<string | null>(null);
+  const [isBot, setIsBot] = useState(false);
 
   // Listen for match via Realtime
   useEffect(() => {
@@ -68,6 +69,7 @@ const PlayLobby = ({ profile, profileId, walletAddress }: PlayLobbyProps) => {
 
       if (data.status === "matched") {
         setMatchStatus("matched");
+        setIsBot(data.isBot === true);
         setSearching(false);
       } else {
         setQueueId(data.queueId);
@@ -89,6 +91,11 @@ const PlayLobby = ({ profile, profileId, walletAddress }: PlayLobbyProps) => {
       >
         <Swords className="h-12 w-12 text-secondary" />
         <h2 className="font-display text-2xl font-bold text-foreground">Match Found!</h2>
+        {isBot && (
+          <span className="rounded-full border border-primary/30 bg-primary/10 px-3 py-1 font-mono text-xs text-primary">
+            vs AI Agent
+          </span>
+        )}
         <p className="font-mono text-sm text-muted-foreground">Preparing the arena...</p>
       </motion.div>
     );
