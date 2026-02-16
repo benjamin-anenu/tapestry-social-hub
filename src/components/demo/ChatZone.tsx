@@ -21,9 +21,10 @@ interface ChatZoneProps {
   clueDrops: ClueDropMessage[];
   onSendMessage?: (text: string) => void;
   disabled?: boolean;
+  isTyping?: boolean;
 }
 
-const ChatZone = ({ timeLeft, messages, clueDrops, onSendMessage, disabled }: ChatZoneProps) => {
+const ChatZone = ({ timeLeft, messages, clueDrops, onSendMessage, disabled, isTyping }: ChatZoneProps) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [inputValue, setInputValue] = useState("");
 
@@ -104,10 +105,25 @@ const ChatZone = ({ timeLeft, messages, clueDrops, onSendMessage, disabled }: Ch
           })}
         </AnimatePresence>
 
-        {allItems.length === 0 && (
+        {allItems.length === 0 && !isTyping && (
           <p className="font-mono text-[10px] text-muted-foreground italic text-center py-8">
             CHANNEL OPEN...
           </p>
+        )}
+
+        {isTyping && (
+          <motion.div
+            initial={{ opacity: 0, y: 5 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="flex justify-start"
+          >
+            <div className="flex items-center gap-1 rounded-lg border border-border/50 bg-muted/50 px-3 py-2">
+              <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:0ms]" />
+              <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:150ms]" />
+              <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:300ms]" />
+            </div>
+          </motion.div>
         )}
       </div>
 

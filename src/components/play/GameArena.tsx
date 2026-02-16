@@ -137,14 +137,14 @@ const GameArena = ({ gameId, role, isBot, walletAddress }: GameArenaProps) => {
     setSendingChat(true);
     try {
       await supabase.functions.invoke("player-chat", {
-        body: { gameId, message: text },
+        body: { gameId, message: text, puzzleValues: values },
       });
     } catch (err) {
       console.error("Send chat error:", err);
     } finally {
       setSendingChat(false);
     }
-  }, [gameId, sendingChat]);
+  }, [gameId, sendingChat, values]);
 
   const handleSubmit = async () => {
     const allCorrect = puzzleFields
@@ -153,7 +153,6 @@ const GameArena = ({ gameId, role, isBot, walletAddress }: GameArenaProps) => {
 
     if (allCorrect) {
       setSolved(true);
-      // Update game as solved
       await supabase
         .from("games")
         .update({
@@ -166,6 +165,10 @@ const GameArena = ({ gameId, role, isBot, walletAddress }: GameArenaProps) => {
     } else {
       setWrongGuess(true);
       setTimeout(() => setWrongGuess(false), 600);
+      // Notify bot about wrong guess so it can react
+      supabase.functions.invoke("player-chat", {
+        body: { gameId, message: "__WRONG_GUESS__", puzzleValues: values },
+      }).catch(() => {});
     }
   };
 
@@ -283,6 +286,7 @@ const GameArena = ({ gameId, role, isBot, walletAddress }: GameArenaProps) => {
           clueDrops={liveClueDrops}
           onSendMessage={handleSendChat}
           disabled={sendingChat || isCompleted}
+          isTyping={sendingChat}
         />
 
         {/* Puzzle Zone (Hunter) or Status (Hunted) */}
