@@ -80,7 +80,7 @@ serve(async (req) => {
       .single();
 
     if (opponent) {
-      // Create game
+      // Create game with human opponent
       const hunterId = role === "hunter" ? profileId : opponent.profile_id;
       const huntedId = role === "hunted" ? profileId : opponent.profile_id;
 
@@ -95,13 +95,13 @@ serve(async (req) => {
           bounty_base: 0.01,
           bounty_total: (stakeAmount ?? 0) + (opponent.stake_amount ?? 0) + 0.01,
           status: "matched",
+          is_bot_game: false,
         })
         .select()
         .single();
 
       if (gameError) throw gameError;
 
-      // Update both queue entries
       await supabase
         .from("matchmaking_queue")
         .update({ status: "matched", matched_with: opponent.id })
@@ -113,13 +113,74 @@ serve(async (req) => {
         .eq("id", opponent.id);
 
       return new Response(
-        JSON.stringify({ status: "matched", gameId: game.id }),
+        JSON.stringify({ status: "matched", gameId: game.id, isBot: false }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
+    // No human opponent found — match with a bot
+    const botRoleHint = oppositeRole === "duel" ? "duel" : oppositeRole;
+    const botUsernames: Record<string, string[]> = {
+      hunter: ["Agent Viper", "NeonWraith"],
+      hunted: ["Shadow Protocol", "GhostSignal"],
+      duel: ["CipherPunk", "DarkMatter"],
+    };
+    const candidates = botUsernames[botRoleHint] ?? botUsernames["duel"];
+    const pick = candidates[Math.floor(Math.random() * candidates.length)];
+
+    const { data: bot } = await supabase
+      .from("profiles")
+      .select("id, user_id")
+      .eq("username", pick)
+      .eq("is_bot", true)
+      .maybeSingle();
+
+    if (!bot) {
+      // Fallback: stay in queue if bots missing
+      return new Response(
+        JSON.stringify({ status: "waiting", queueId: entry.id }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Insert bot queue entry
+    await supabase.from("matchmaking_queue").insert({
+      user_id: bot.user_id,
+      profile_id: bot.id,
+      role: oppositeRole,
+      stake_amount: stakeAmount ?? 0,
+      status: "matched",
+      matched_with: entry.id,
+    });
+
+    const botHunterId = role === "hunter" ? profileId : bot.id;
+    const botHuntedId = role === "hunted" ? profileId : bot.id;
+
+    const { data: botGame, error: botGameError } = await supabase
+      .from("games")
+      .insert({
+        hunter_id: botHunterId,
+        hunted_id: botHuntedId,
+        role_mode: role === "duel" ? "duel" : "hunter",
+        hunter_stake: stakeAmount ?? 0,
+        hunted_stake: stakeAmount ?? 0,
+        bounty_base: 0.01,
+        bounty_total: (stakeAmount ?? 0) * 2 + 0.01,
+        status: "matched",
+        is_bot_game: true,
+      })
+      .select()
+      .single();
+
+    if (botGameError) throw botGameError;
+
+    await supabase
+      .from("matchmaking_queue")
+      .update({ status: "matched", matched_with: null })
+      .eq("id", entry.id);
+
     return new Response(
-      JSON.stringify({ status: "waiting", queueId: entry.id }),
+      JSON.stringify({ status: "matched", gameId: botGame.id, isBot: true }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error: unknown) {
