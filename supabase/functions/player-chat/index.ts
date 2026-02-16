@@ -18,7 +18,7 @@ serve(async (req) => {
     const lovableApiKey = Deno.env.get("LOVABLE_API_KEY")!;
     const supabase = createClient(supabaseUrl, serviceKey);
 
-    const { gameId, message } = await req.json();
+    const { gameId, message, puzzleValues } = await req.json();
     if (!gameId || !message) {
       return new Response(JSON.stringify({ error: "gameId and message required" }), {
         status: 400,
@@ -47,13 +47,41 @@ serve(async (req) => {
       });
     }
 
-    // Append player message to chat_log
-    const chatLog = (game.chat_log as Array<{ time: number; sender: string; text: string }>) ?? [];
-    // Use a rough time estimate based on chat length
-    const timeLabel = Math.max(60 - chatLog.length * 3, 5);
-    chatLog.push({ time: timeLabel, sender: "you", text: message });
+    // Build puzzle context for AI
+    const puzzleFields = (game.puzzle_fields as Array<{ id: string; label: string; answer: string }>) ?? [];
+    let puzzleContext = "";
+    const isWrongGuess = message === "__WRONG_GUESS__";
+    
+    if (puzzleValues && puzzleFields.length > 0) {
+      const attempts = puzzleFields.map((f) => {
+        const val = (puzzleValues as Record<string, string>)?.[f.id] ?? "";
+        if (!val) return null;
+        const isClose = f.answer.toLowerCase().includes(val.toLowerCase()) || 
+                        val.toLowerCase().includes(f.answer.toLowerCase().slice(0, 3));
+        const isCorrect = val.toLowerCase().trim() === f.answer.toLowerCase();
+        return { label: f.label, value: val, isClose, isCorrect };
+      }).filter(Boolean);
+      
+      const correctCount = attempts.filter((a) => a?.isCorrect).length;
+      const closeCount = attempts.filter((a) => a?.isClose && !a?.isCorrect).length;
+      
+      if (isWrongGuess) {
+        puzzleContext = `\n\nPUZZLE EVENT: The player just submitted a WRONG answer. They got ${correctCount}/${puzzleFields.length} fields right and ${closeCount} are close. React naturally — tease them, be relieved, or taunt depending on your role. Keep it short.`;
+      } else if (closeCount > 0) {
+        puzzleContext = `\n\nPUZZLE CONTEXT: The player has ${correctCount} correct fields and ${closeCount} close guesses. They're getting warm. React subtly — maybe show nervousness if hunted, or excitement if hunting.`;
+      } else if (correctCount > 0) {
+        puzzleContext = `\n\nPUZZLE CONTEXT: The player has ${correctCount} correct fields already. ${correctCount >= puzzleFields.length - 1 ? "They're VERY close to solving!" : "They're making progress."}`;
+      }
+    }
 
-    await supabase.from("games").update({ chat_log: chatLog }).eq("id", gameId);
+    // Append player message to chat_log (skip internal markers)
+    const chatLog = (game.chat_log as Array<{ time: number; sender: string; text: string }>) ?? [];
+    const timeLabel = Math.max(60 - chatLog.length * 3, 5);
+    
+    if (!isWrongGuess) {
+      chatLog.push({ time: timeLabel, sender: "you", text: message });
+      await supabase.from("games").update({ chat_log: chatLog }).eq("id", gameId);
+    }
 
     // Find bot profile
     const { data: botProfile } = await supabase
@@ -93,7 +121,8 @@ CRITICAL RULES — you MUST follow ALL of these:
 Your role: ${botRole}
 ${botRole === "hunted" ? "You're hiding. Be evasive, teasing, deflective. Don't give away real info." : ""}
 ${botRole === "hunter" ? "You're hunting. Ask probing questions, react to what they reveal." : ""}
-${botRole === "duel" ? "It's a duel. Be strategic and competitive." : ""}`;
+${botRole === "duel" ? "It's a duel. Be strategic and competitive." : ""}
+${puzzleContext}`;
 
     const aiMessages = [
       { role: "system", content: systemPrompt },
