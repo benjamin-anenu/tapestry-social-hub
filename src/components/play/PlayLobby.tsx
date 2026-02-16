@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
 import type { TapestryProfile } from "@/hooks/useTapestryIdentity";
+import GameArena from "./GameArena";
 
 interface PlayLobbyProps {
   profile: TapestryProfile;
@@ -27,6 +28,8 @@ const PlayLobby = ({ profile, profileId, walletAddress }: PlayLobbyProps) => {
   const [matchStatus, setMatchStatus] = useState<string | null>(null);
   const [queueId, setQueueId] = useState<string | null>(null);
   const [isBot, setIsBot] = useState(false);
+  const [gameId, setGameId] = useState<string | null>(null);
+  const [showArena, setShowArena] = useState(false);
 
   // Listen for match via Realtime
   useEffect(() => {
@@ -70,7 +73,10 @@ const PlayLobby = ({ profile, profileId, walletAddress }: PlayLobbyProps) => {
       if (data.status === "matched") {
         setMatchStatus("matched");
         setIsBot(data.isBot === true);
+        setGameId(data.gameId);
         setSearching(false);
+        // Auto-transition to arena after 2 seconds
+        setTimeout(() => setShowArena(true), 2000);
       } else {
         setQueueId(data.queueId);
         setMatchStatus("waiting");
@@ -81,6 +87,18 @@ const PlayLobby = ({ profile, profileId, walletAddress }: PlayLobbyProps) => {
       setMatchStatus("error");
     }
   };
+
+  // Show GameArena after transition
+  if (showArena && gameId) {
+    return (
+      <GameArena
+        gameId={gameId}
+        role={role}
+        isBot={isBot}
+        walletAddress={walletAddress}
+      />
+    );
+  }
 
   if (matchStatus === "matched") {
     return (
