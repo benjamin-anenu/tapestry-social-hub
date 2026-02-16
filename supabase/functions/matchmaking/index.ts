@@ -26,7 +26,7 @@ serve(async (req) => {
       });
     }
 
-    const userClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_PUBLISHABLE_KEY")!);
+    const userClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY") ?? serviceKey);
     const { data: { user }, error: authError } = await userClient.auth.getUser(
       authHeader.replace("Bearer ", "")
     );
