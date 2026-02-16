@@ -4,7 +4,6 @@ import { Search, Ghost, Zap, Loader2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import { MOCK_OPPONENT } from "@/lib/mock-data";
 
 interface DemoModeSelectProps {
@@ -14,9 +13,9 @@ interface DemoModeSelectProps {
 type Phase = "select" | "matching" | "matched";
 
 const modes = [
-  { id: "finder", label: "Finder", icon: Search, desc: "Find someone in 60 seconds", recommended: true },
-  { id: "hider", label: "Hider", icon: Ghost, desc: "Stay hidden for 60 seconds" },
-  { id: "duel", label: "Duel", icon: Zap, desc: "Find each other — first wins" },
+  { id: "finder", label: "FINDER", icon: Search, desc: "Find someone in 60 seconds", tag: "REC" },
+  { id: "hider", label: "HIDER", icon: Ghost, desc: "Stay hidden for 60 seconds", tag: null },
+  { id: "duel", label: "DUEL", icon: Zap, desc: "Find each other — first wins", tag: null },
 ];
 
 const DemoModeSelect = ({ onNext }: DemoModeSelectProps) => {
@@ -43,34 +42,52 @@ const DemoModeSelect = ({ onNext }: DemoModeSelectProps) => {
             className="flex w-full flex-col items-center gap-5"
           >
             <div className="text-center space-y-1">
-              <h2 className="font-display text-3xl font-bold text-foreground">Choose Your Mode</h2>
-              <p className="text-sm text-muted-foreground">How do you want to play?</p>
+              <h2 className="font-display text-2xl font-bold text-foreground">SELECT MODE</h2>
+              <p className="font-mono text-[10px] tracking-widest text-muted-foreground">
+                CHOOSE YOUR PLAY STYLE
+              </p>
             </div>
 
-            <div className="w-full space-y-3">
+            <div className="w-full space-y-2.5">
               {modes.map((mode) => {
                 const Icon = mode.icon;
                 const isSelected = selected === mode.id;
                 return (
                   <motion.div key={mode.id} whileTap={{ scale: 0.98 }}>
                     <Card
-                      className={`cursor-pointer transition-all ${isSelected ? "border-primary ring-2 ring-primary/20" : "hover:border-primary/30"}`}
+                      className={`cursor-pointer border transition-all ${
+                        isSelected
+                          ? "border-primary/50 bg-primary/5 glow-blue"
+                          : "border-border/50 bg-card/50 hover:border-primary/20"
+                      }`}
                       onClick={() => setSelected(mode.id)}
                     >
                       <CardContent className="flex items-center gap-4 p-4">
                         <div
-                          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${isSelected ? "text-primary-foreground" : "bg-muted text-muted-foreground"}`}
-                          style={isSelected ? { backgroundImage: "var(--gradient-primary)" } : {}}
+                          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border ${
+                            isSelected
+                              ? "border-primary/50 bg-primary/20 text-primary"
+                              : "border-border bg-muted text-muted-foreground"
+                          }`}
                         >
-                          <Icon className="h-6 w-6" />
+                          <Icon className="h-5 w-5" />
                         </div>
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
-                            <span className="font-display text-lg font-bold text-foreground">{mode.label}</span>
-                            {mode.recommended && <Badge className="text-[10px]">Recommended</Badge>}
+                            <span className="font-display text-base font-bold text-foreground">
+                              {mode.label}
+                            </span>
+                            {mode.tag && (
+                              <span className="rounded border border-secondary/30 bg-secondary/10 px-1.5 py-0.5 font-mono text-[8px] font-bold tracking-wider text-secondary">
+                                {mode.tag}
+                              </span>
+                            )}
                           </div>
-                          <p className="text-sm text-muted-foreground">{mode.desc}</p>
+                          <p className="font-mono text-[11px] text-muted-foreground">{mode.desc}</p>
                         </div>
+                        {isSelected && (
+                          <div className="h-2 w-2 rounded-full bg-primary shadow-[0_0_8px_hsla(220,100%,50%,0.5)]" />
+                        )}
                       </CardContent>
                     </Card>
                   </motion.div>
@@ -81,10 +98,9 @@ const DemoModeSelect = ({ onNext }: DemoModeSelectProps) => {
             <Button
               size="lg"
               onClick={handlePlay}
-              className="h-12 w-full rounded-2xl font-display font-semibold"
-              style={{ backgroundImage: "var(--gradient-primary)" }}
+              className="h-12 w-full rounded-xl bg-primary font-display font-bold text-primary-foreground glow-blue"
             >
-              Find a Match
+              FIND MATCH
             </Button>
           </motion.div>
         )}
@@ -97,23 +113,26 @@ const DemoModeSelect = ({ onNext }: DemoModeSelectProps) => {
             exit={{ opacity: 0 }}
             className="flex flex-col items-center gap-6 py-12"
           >
-            <motion.div
-              animate={{ rotate: 360 }}
-              transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-            >
-              <Loader2 className="h-12 w-12 text-primary" />
-            </motion.div>
-            <div className="text-center space-y-1">
-              <p className="font-display text-xl font-bold text-foreground">Smart Matching…</p>
-              <p className="text-sm text-muted-foreground">Scanning Tapestry social graph</p>
+            <div className="relative">
+              <motion.div
+                animate={{ rotate: 360 }}
+                transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                className="h-16 w-16 rounded-2xl border-2 border-primary border-t-transparent"
+              />
+            </div>
+            <div className="text-center space-y-2">
+              <p className="font-display text-lg font-bold text-foreground">MATCHING</p>
+              <p className="font-mono text-[10px] tracking-wider text-primary animate-pulse">
+                SCANNING TAPESTRY SOCIAL GRAPH
+              </p>
             </div>
             <div className="flex gap-1">
               {[0, 1, 2, 3, 4].map((i) => (
                 <motion.div
                   key={i}
-                  animate={{ opacity: [0.3, 1, 0.3] }}
-                  transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.2 }}
-                  className="h-2 w-2 rounded-full bg-primary"
+                  animate={{ opacity: [0.2, 1, 0.2] }}
+                  transition={{ duration: 1, repeat: Infinity, delay: i * 0.15 }}
+                  className="h-1.5 w-1.5 rounded-full bg-primary"
                 />
               ))}
             </div>
@@ -128,20 +147,32 @@ const DemoModeSelect = ({ onNext }: DemoModeSelectProps) => {
             transition={{ type: "spring", stiffness: 200 }}
             className="flex w-full flex-col items-center gap-5"
           >
-            <p className="font-display text-xl font-bold text-secondary">Match Found!</p>
+            <motion.p
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              className="font-display text-xl font-bold text-secondary text-glow-green"
+            >
+              MATCH FOUND
+            </motion.p>
 
-            <Card className="w-full border-secondary/30">
+            <Card className="w-full border-secondary/20 bg-card/80 backdrop-blur-sm">
               <CardContent className="flex items-center gap-4 p-5">
-                <Avatar className="h-14 w-14 border-2 border-secondary/30">
+                <Avatar className="h-14 w-14 rounded-xl border-2 border-secondary/30">
                   <AvatarImage src={MOCK_OPPONENT.avatar} />
-                  <AvatarFallback>AH</AvatarFallback>
+                  <AvatarFallback className="rounded-xl bg-muted font-mono text-xs">AH</AvatarFallback>
                 </Avatar>
                 <div className="flex-1">
-                  <p className="font-display text-lg font-bold text-foreground">{MOCK_OPPONENT.displayName}</p>
-                  <p className="text-sm text-muted-foreground">{MOCK_OPPONENT.username}</p>
-                  <div className="mt-1 flex gap-2">
-                    <Badge variant="outline" className="text-[10px]">Find Rate: {MOCK_OPPONENT.findRate}%</Badge>
-                    <Badge variant="outline" className="text-[10px]">Vibe: {MOCK_OPPONENT.vibeScore}</Badge>
+                  <p className="font-display text-lg font-bold text-foreground">
+                    {MOCK_OPPONENT.displayName}
+                  </p>
+                  <p className="font-mono text-xs text-muted-foreground">{MOCK_OPPONENT.username}</p>
+                  <div className="mt-1.5 flex gap-2">
+                    <span className="rounded border border-border bg-muted/50 px-1.5 py-0.5 font-mono text-[9px] text-muted-foreground">
+                      FIND {MOCK_OPPONENT.findRate}%
+                    </span>
+                    <span className="rounded border border-primary/20 bg-primary/10 px-1.5 py-0.5 font-mono text-[9px] text-primary">
+                      VIBE {MOCK_OPPONENT.vibeScore}
+                    </span>
                   </div>
                 </div>
               </CardContent>
@@ -150,10 +181,9 @@ const DemoModeSelect = ({ onNext }: DemoModeSelectProps) => {
             <Button
               size="lg"
               onClick={onNext}
-              className="h-12 w-full rounded-2xl font-display font-semibold"
-              style={{ backgroundImage: "var(--gradient-primary)" }}
+              className="h-12 w-full rounded-xl bg-primary font-display font-bold text-primary-foreground glow-blue"
             >
-              Start Game
+              START HUNT
             </Button>
           </motion.div>
         )}
