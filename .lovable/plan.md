@@ -1,117 +1,109 @@
 
 
-# AI Gameplay Behavior for Bot Matches
+# Live Gameplay: GameArena + Bot Behavior Engine
 
-## Summary
+## Overview
 
-After matchmaking returns a game, there's currently no live gameplay screen — only the demo uses mock data. This plan builds a real gameplay flow that launches after matchmaking, with AI bots that actively send chat messages, drop clues, and "solve" puzzles during bot games.
+This plan connects the "Match Found!" screen to a fully playable game. After matchmaking, the player enters a GameArena that shows a 60-second countdown, live chat, puzzle fields, and clue drops -- all powered by real database state. For bot games, a server-side edge function simulates the AI opponent's behavior in real time.
 
-## Architecture
+## What Gets Built
 
-The approach uses a single new Edge Function (`bot-gameplay`) that simulates bot behavior server-side, writing actions to the `games` table's JSONB columns (`chat_log`, `clues_dropped`, `puzzle_fields`). The client subscribes to real-time updates on the game row to render bot actions live.
+### 1. Enable Realtime on the Games Table
+A database migration adds the `games` table to the Realtime publication so the client can subscribe to row-level changes (chat messages appearing, clues being dropped, game status changing).
+
+### 2. RLS Policy for Service Role Bot Updates
+The current RLS policies on `games` require `auth.uid()` matching a profile. The bot-gameplay edge function uses the service role key, which bypasses RLS, so no policy changes are needed. However, the client needs to read the game row -- current SELECT policy requires auth. A new permissive SELECT policy will allow reading games by ID for anonymous/wallet-based users (since this app doesn't use Supabase Auth sign-in).
+
+### 3. GameArena Component (`src/components/play/GameArena.tsx`)
+A new component that:
+- Receives `gameId`, `role`, and `isBot` from PlayLobby
+- Fetches the initial game row from the database
+- Subscribes to Realtime UPDATE events on the specific game row
+- Renders the 60-second GameTimer (real-time, 1 tick/second)
+- Shows a split-screen layout: ChatZone (left) + PuzzleZone or CluePanel (right) based on role
+- Adapts the existing demo components to work with live JSONB data instead of mock constants
+- Displays game-over state (FOUND / SURVIVED / CAUGHT) when the game ends
+
+### 4. Update PlayLobby to Transition into GameArena
+After "Match Found!" displays for ~2 seconds:
+- Store `gameId` in state
+- Auto-transition to render `<GameArena>` instead of the match-found card
+- Pass `gameId`, `role`, `isBot`, and `walletAddress` as props
+
+### 5. Bot Gameplay Edge Function (`supabase/functions/bot-gameplay/index.ts`)
+Called once by the client when a bot game starts. Runs server-side for ~15 seconds, simulating the bot's actions:
+
+**Bot as Hunted (player is Hunter):**
+- Sets `started_at` and initializes `puzzle_fields` with themed data based on bot identity
+- Appends chat messages to `chat_log` at 2-3 second intervals (personality-scripted)
+- Appends clue drops to `clues_dropped` at scheduled intervals
+- Waits for the player to submit a correct solve or for the function to finish
+
+**Bot as Hunter (player is Hunted):**
+- Sets `started_at`
+- Appends probing chat messages to `chat_log`
+- At a random time (8-12 seconds into the function), sets `hunter_won = true`, `solved_at`, and `status = 'completed'`
+
+**Bot in Duel mode:**
+- Combines both behaviors
+
+### 6. Update Matchmaking to Initialize Game State
+When creating a bot game, the matchmaking function will set `started_at = now()` and populate initial `puzzle_fields` based on the bot's identity so the game is immediately playable.
+
+## Data Flow
 
 ```text
-[Player clicks Find Match]
-        |
-        v
-[matchmaking returns gameId + isBot]
-        |
-        v
-[PlayLobby transitions to GameArena component]
-  -- subscribes to games row via Realtime
-  -- if isBot: calls bot-gameplay edge function
-        |
-        v
-[bot-gameplay edge function]
-  -- Loads game + bot profile
-  -- Runs a timed loop (server-side):
-     - Appends chat messages to chat_log JSONB
-     - Appends clue drops to clues_dropped JSONB  
-     - If bot is Hunter: "solves" puzzle at a random time
-     - If bot is Hunted: drops clues on schedule
-  -- Updates game status when complete
-        |
-        v
-[Client sees updates via Realtime]
-  -- Chat messages appear
-  -- Clues reveal
-  -- Game ends when bot solves or timer expires
+Client (PlayLobby)
+  |-- POST /matchmaking --> returns { gameId, isBot: true }
+  |
+  v
+Client (GameArena)
+  |-- Subscribes to Realtime on games WHERE id = gameId
+  |-- POST /bot-gameplay { gameId }  (fire-and-forget)
+  |
+  v
+Edge Function (bot-gameplay)
+  |-- sleep(2s) --> UPDATE games SET chat_log = [..., msg1]
+  |-- sleep(3s) --> UPDATE games SET chat_log = [..., msg2], clues_dropped = [..., clue1]
+  |-- sleep(3s) --> UPDATE games SET chat_log = [..., msg3]
+  |-- ...continues for ~15 seconds...
+  |-- Final: UPDATE games SET status = 'completed', ended_at = now()
+  |
+  v
+Client receives each UPDATE via Realtime
+  |-- Re-renders ChatZone with new messages
+  |-- Re-renders PuzzleZone with new clues/unlocked fields
+  |-- Shows game-over when status = 'completed'
 ```
 
-## Step 1: Create the Game Arena Component
+## Bot Personality Message Banks
 
-A new `src/components/play/GameArena.tsx` component that:
-- Receives `gameId`, `role`, and `isBot` from PlayLobby
-- Fetches the game row from the database
-- Subscribes to Realtime updates on the game row
-- Renders the existing ChatZone + PuzzleZone (or Clue Control Panel for Hunted)
-- Uses real data from the game's JSONB columns instead of mock data
-- Manages the 60-second timer client-side
+| Bot Name | Role | Sample Messages |
+|----------|------|----------------|
+| Shadow Protocol | Hunted | "You'll never find me.", "Getting warmer... or not.", "I'm always one step ahead." |
+| GhostSignal | Hunted | "Signal lost.", "I exist between the blocks.", "Catch my shadow if you can." |
+| Agent Viper | Hunter | "Scanning your graph...", "I see your connections.", "Target acquired." |
+| NeonWraith | Hunter | "Your data trail glows.", "Processing identity matrix...", "Almost there." |
+| CipherPunk | Duel | "Let's see who's faster.", "Encrypting my tracks.", "Your move." |
+| DarkMatter | Duel | "You can't see what isn't there.", "Running analysis...", "Interesting patterns." |
 
-## Step 2: Update PlayLobby to Transition to GameArena
+## Files Changed
 
-After matchmaking returns `status: "matched"`:
-- Store the `gameId` in state
-- Transition from the "Match Found!" screen to the GameArena component
-- Pass `gameId`, `role`, and `isBot` to GameArena
+| File | Action |
+|------|--------|
+| Database migration | Enable Realtime on games table + add permissive SELECT policy |
+| `supabase/functions/bot-gameplay/index.ts` | Create -- bot simulation engine |
+| `supabase/config.toml` | Add bot-gameplay function config |
+| `src/components/play/GameArena.tsx` | Create -- live gameplay UI |
+| `src/components/play/PlayLobby.tsx` | Modify -- transition to GameArena after match |
+| `supabase/functions/matchmaking/index.ts` | Modify -- initialize puzzle_fields on bot game creation |
 
-## Step 3: Create bot-gameplay Edge Function
+## Technical Details
 
-New file: `supabase/functions/bot-gameplay/index.ts`
-
-This function is called once when a bot game starts. It:
-1. Loads the game row and bot profile
-2. Initializes `puzzle_fields` on the game (from a template or defaults)
-3. Uses `setTimeout`-style sequential updates to simulate bot actions over ~60 seconds (compressed to run in ~10-15 seconds for responsiveness):
-
-**If the bot is the Hunted (player is Hunter):**
-- Writes chat messages to `chat_log` at intervals (themed per bot personality)
-- Drops clues to `clues_dropped` at scheduled intervals (45s, 30s, 15s remaining)
-- Waits for the player to solve or time to expire
-
-**If the bot is the Hunter (player is Hunted):**
-- Writes probing chat messages to `chat_log`
-- Attempts to "solve" the puzzle at a random time (30-50 seconds in)
-- Updates `hunter_won`, `solved_at`, and game `status`
-
-Bot chat messages are pre-scripted per bot personality (no AI model calls needed — keeps it simple and fast).
-
-## Step 4: Enable Realtime on Games Table
-
-Database migration:
-```sql
-ALTER PUBLICATION supabase_realtime ADD TABLE public.games;
-```
-
-This lets the client subscribe to changes on the game row.
-
-## Step 5: Initialize Game State on Match
-
-Update the `matchmaking` edge function to populate initial `puzzle_fields` when creating a bot game, so the game is ready to play immediately.
-
-## Files to Create/Modify
-
-| File | Action | Purpose |
-|------|--------|---------|
-| `supabase/functions/bot-gameplay/index.ts` | Create | Bot behavior engine |
-| `src/components/play/GameArena.tsx` | Create | Live gameplay screen |
-| `src/components/play/PlayLobby.tsx` | Modify | Transition to GameArena after match |
-| `supabase/functions/matchmaking/index.ts` | Modify | Initialize puzzle_fields on game creation |
-| Database migration | Add | Enable Realtime on games table |
-
-## Bot Personality Scripts
-
-Each bot has pre-written message sets based on their name:
-
-- **Agent Viper / NeonWraith** (Hunter bots): Aggressive, fast messages like "Scanning your graph...", "I see your connections.", "Target acquired."
-- **Shadow Protocol / GhostSignal** (Hunted bots): Evasive, playful messages like "You'll never find me.", "Getting warmer... or not.", "I'm always one step ahead."
-- **CipherPunk / DarkMatter** (Duel bots): Mix of both styles.
-
-## Technical Notes
-
-- Bot actions use sequential database updates with `sleep()` delays in the edge function (Deno supports this natively)
-- Edge function timeout is 60 seconds by default, which matches the game duration
-- No AI model calls needed — pre-scripted messages keep latency minimal and costs zero
-- The client polls or subscribes via Realtime for game state changes
-- Game completion updates `status` to "completed", `hunter_won` to true/false, and `ended_at`
+- The GameTimer will run at real speed (1 tick/second) in live games, not the demo's accelerated 600ms speed
+- The bot-gameplay function compresses 60 seconds of "game time" into ~15 seconds of real execution to keep things snappy
+- Bot puzzle fields use themed data (e.g., Shadow Protocol's location = "The Void", profession = "Signal Jammer")
+- The edge function uses `Deno.sleep()` style delays between database writes
+- Chat messages use the existing `ChatZone` component format: `{ time, sender, text }`
+- Puzzle fields use the existing `PuzzleField` interface: `{ id, label, placeholder, answer, clueText, unlockTime, isRequired }`
 
