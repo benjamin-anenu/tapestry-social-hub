@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, Ghost, Zap, Loader2 } from "lucide-react";
+import { Crosshair, Ghost, Zap, Loader2, Coins } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
-import { MOCK_OPPONENT } from "@/lib/mock-data";
+import { MOCK_OPPONENT, MOCK_BOUNTY } from "@/lib/mock-data";
 
 interface DemoModeSelectProps {
   onNext: () => void;
@@ -13,14 +13,35 @@ interface DemoModeSelectProps {
 type Phase = "select" | "matching" | "matched";
 
 const modes = [
-  { id: "finder", label: "FINDER", icon: Search, desc: "Find someone in 60 seconds", tag: "REC" },
-  { id: "hider", label: "HIDER", icon: Ghost, desc: "Stay hidden for 60 seconds", tag: null },
-  { id: "duel", label: "DUEL", icon: Zap, desc: "Find each other — first wins", tag: null },
+  {
+    id: "hunter",
+    label: "HUNTER",
+    icon: Crosshair,
+    desc: "Prove you can find me in 60 seconds",
+    matchText: "Matched with → Hunted",
+    tag: "REC",
+  },
+  {
+    id: "hunted",
+    label: "HUNTED",
+    icon: Ghost,
+    desc: "Make them work to know you",
+    matchText: "Matched with → Hunter",
+    tag: null,
+  },
+  {
+    id: "duel",
+    label: "DUEL",
+    icon: Zap,
+    desc: "Find each other — first wins",
+    matchText: "Matched with → Duel",
+    tag: null,
+  },
 ];
 
 const DemoModeSelect = ({ onNext }: DemoModeSelectProps) => {
   const [phase, setPhase] = useState<Phase>("select");
-  const [selected, setSelected] = useState("finder");
+  const [selected, setSelected] = useState("hunter");
 
   const handlePlay = () => {
     setPhase("matching");
@@ -84,6 +105,7 @@ const DemoModeSelect = ({ onNext }: DemoModeSelectProps) => {
                             )}
                           </div>
                           <p className="font-mono text-[11px] text-muted-foreground">{mode.desc}</p>
+                          <p className="font-mono text-[9px] text-primary/60 mt-0.5">{mode.matchText}</p>
                         </div>
                         {isSelected && (
                           <div className="h-2 w-2 rounded-full bg-primary shadow-[0_0_8px_hsla(220,100%,50%,0.5)]" />
@@ -177,6 +199,15 @@ const DemoModeSelect = ({ onNext }: DemoModeSelectProps) => {
                 </div>
               </CardContent>
             </Card>
+
+            {/* Bounty preview */}
+            <div className="flex w-full items-center justify-between rounded-lg border border-secondary/20 bg-secondary/5 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <Coins className="h-4 w-4 text-secondary" />
+                <span className="font-mono text-[10px] text-secondary tracking-widest">BOUNTY POOL</span>
+              </div>
+              <span className="font-mono text-sm font-bold text-secondary">0.05 SOL</span>
+            </div>
 
             <Button
               size="lg"

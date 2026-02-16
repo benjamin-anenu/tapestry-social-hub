@@ -162,3 +162,10 @@
   22% { transform: skew(0deg); }
   100% { transform: skew(0deg); }
 }
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  50% { transform: translateX(4px); }
+  75% { transform: translateX(-4px); }
+}
