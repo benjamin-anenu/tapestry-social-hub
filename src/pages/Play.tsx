@@ -125,6 +125,7 @@ const Play = () => {
               <PlayLobby
                 profile={activeProfile}
                 profileId={(activeProfile.profile?.id as string) ?? ""}
+                walletAddress={walletAddress!}
               />
             </motion.div>
           )}

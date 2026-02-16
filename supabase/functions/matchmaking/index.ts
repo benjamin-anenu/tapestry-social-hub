@@ -17,35 +17,30 @@ serve(async (req) => {
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, serviceKey);
 
-    // Validate auth
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ error: "Not authenticated" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const anonClient = createClient(supabaseUrl, serviceKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
-    const token = authHeader.replace("Bearer ", "");
-    const { data: claimsData, error: claimsError } = await anonClient.auth.getClaims(token);
-    if (claimsError || !claimsData?.claims) {
-      return new Response(JSON.stringify({ error: "Invalid token" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-    const userId = claimsData.claims.sub as string;
-
-    const { profileId, role, stakeAmount } = await req.json();
-    if (!profileId || !role) {
-      return new Response(JSON.stringify({ error: "profileId and role are required" }), {
+    const { profileId, walletAddress, role, stakeAmount } = await req.json();
+    if (!profileId || !role || !walletAddress) {
+      return new Response(JSON.stringify({ error: "profileId, walletAddress, and role are required" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    // Verify the profile exists and matches the wallet
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("id, user_id")
+      .eq("id", profileId)
+      .eq("wallet_address", walletAddress)
+      .maybeSingle();
+
+    if (profileError || !profile) {
+      return new Response(JSON.stringify({ error: "Profile not found for this wallet" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const userId = profile.user_id;
 
     // Insert into queue
     const { data: entry, error: insertError } = await supabase
