@@ -28,9 +28,9 @@ export const MOCK_OPPONENT = {
 };
 
 export const MOCK_REPUTATION = [
-  { app: "Zumichat", score: 84, color: "hsl(263, 70%, 58%)" },
-  { app: "Find60", score: 72, color: "hsl(174, 60%, 48%)" },
-  { app: "SolArena", score: 67, color: "hsl(220, 70%, 55%)" },
+  { app: "Zumichat", score: 84, color: "hsl(220, 100%, 50%)" },
+  { app: "Find60", score: 72, color: "hsl(153, 100%, 50%)" },
+  { app: "SolArena", score: 67, color: "hsl(260, 80%, 55%)" },
 ];
 
 export const MOCK_CROSS_APP = {

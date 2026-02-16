@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Zap, Users, Bot, Trophy, ArrowRight, Sparkles } from "lucide-react";
+import { Crosshair, Users, Bot, Trophy, ArrowRight, Globe, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const FeatureCard = ({ icon: Icon, title, description, delay }: {
@@ -13,13 +13,13 @@ const FeatureCard = ({ icon: Icon, title, description, delay }: {
     initial={{ opacity: 0, y: 20 }}
     animate={{ opacity: 1, y: 0 }}
     transition={{ delay, duration: 0.5 }}
-    className="flex flex-col items-center gap-3 rounded-2xl border border-border bg-card p-6 text-center shadow-sm hover:shadow-md transition-shadow"
+    className="flex flex-col gap-3 rounded-xl border border-border/50 bg-card/50 p-5 backdrop-blur-sm transition-all hover:border-primary/30 hover:bg-card/80"
   >
-    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent">
-      <Icon className="h-6 w-6 text-accent-foreground" />
+    <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-primary/20 bg-primary/10">
+      <Icon className="h-5 w-5 text-primary" />
     </div>
-    <h3 className="font-display text-lg font-semibold text-card-foreground">{title}</h3>
-    <p className="text-sm text-muted-foreground leading-relaxed">{description}</p>
+    <h3 className="font-display text-base font-bold text-foreground">{title}</h3>
+    <p className="font-mono text-xs leading-relaxed text-muted-foreground">{description}</p>
   </motion.div>
 );
 
@@ -27,30 +27,24 @@ const Index = () => {
   const navigate = useNavigate();
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
-      {/* Hero */}
-      <section className="relative flex flex-1 flex-col items-center justify-center overflow-hidden px-6 py-24">
-        {/* Gradient blob background */}
-        <div className="pointer-events-none absolute inset-0 overflow-hidden">
-          <div
-            className="absolute -top-1/2 left-1/2 h-[800px] w-[800px] -translate-x-1/2 rounded-full opacity-20 blur-3xl animate-pulse-glow"
-            style={{ background: "var(--gradient-hero)" }}
-          />
-          <div
-            className="absolute -bottom-1/4 right-0 h-[500px] w-[500px] rounded-full opacity-10 blur-3xl animate-float"
-            style={{ background: "var(--gradient-primary)" }}
-          />
-        </div>
+    <div className="relative flex min-h-screen flex-col bg-background grid-bg overflow-hidden scanlines">
+      {/* Ambient */}
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute -top-40 left-1/2 h-[700px] w-[700px] -translate-x-1/2 rounded-full bg-primary/5 blur-[150px]" />
+        <div className="absolute -bottom-40 right-0 h-[500px] w-[500px] rounded-full bg-secondary/5 blur-[150px]" />
+      </div>
 
-        <div className="relative z-10 flex max-w-3xl flex-col items-center gap-8">
+      {/* Hero */}
+      <section className="relative z-10 flex flex-1 flex-col items-center justify-center px-6 py-24">
+        <div className="flex max-w-3xl flex-col items-center gap-8">
           {/* Badge */}
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="flex items-center gap-2 rounded-full border border-border bg-card px-4 py-1.5 text-sm font-medium text-muted-foreground shadow-sm"
+            className="flex items-center gap-2 rounded-full border border-border/50 bg-card/50 px-4 py-1.5 font-mono text-[10px] tracking-widest text-muted-foreground backdrop-blur-sm"
           >
-            <Sparkles className="h-4 w-4 text-primary" />
-            Powered by Tapestry on Solana
+            <Globe className="h-3 w-3 text-primary" />
+            POWERED BY TAPESTRY ON SOLANA
           </motion.div>
 
           {/* Title */}
@@ -58,15 +52,10 @@ const Index = () => {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
-            className="text-center font-display text-6xl font-bold tracking-tight text-foreground sm:text-7xl"
+            className="text-center font-display text-7xl font-bold tracking-tight text-foreground sm:text-8xl"
           >
-            Find
-            <span
-              className="bg-clip-text text-transparent"
-              style={{ backgroundImage: "var(--gradient-primary)" }}
-            >
-              60
-            </span>
+            <span className="glitch" data-text="FIND">FIND</span>
+            <span className="text-primary text-glow-blue">60</span>
           </motion.h1>
 
           {/* Tagline */}
@@ -74,13 +63,11 @@ const Index = () => {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 }}
-            className="max-w-lg text-center text-xl text-muted-foreground leading-relaxed"
+            className="max-w-md text-center font-mono text-sm leading-relaxed text-muted-foreground"
           >
-            The most interesting minute of your day.
+            60 seconds. Can you find them?
             <br />
-            <span className="text-foreground font-medium">
-              A 60-second social puzzle game on the open social graph.
-            </span>
+            <span className="text-foreground">Or will you disappear?</span>
           </motion.p>
 
           {/* CTAs */}
@@ -88,40 +75,42 @@ const Index = () => {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3 }}
-            className="flex flex-col gap-4 sm:flex-row"
+            className="flex flex-col gap-3 sm:flex-row"
           >
             <Button
               size="lg"
               onClick={() => navigate("/play")}
-              className="h-14 rounded-2xl px-8 font-display text-lg font-semibold shadow-lg hover:shadow-xl transition-all"
-              style={{ backgroundImage: "var(--gradient-primary)" }}
+              className="group relative h-14 overflow-hidden rounded-xl bg-primary px-8 font-display text-lg font-bold text-primary-foreground shadow-lg glow-blue"
             >
-              Play for Real
-              <ArrowRight className="ml-2 h-5 w-5" />
+              <span className="relative z-10 flex items-center gap-2">
+                PLAY FOR REAL
+                <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />
+              </span>
+              <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/10 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
             </Button>
             <Button
               size="lg"
               variant="outline"
               onClick={() => navigate("/demo")}
-              className="h-14 rounded-2xl px-8 font-display text-lg font-semibold"
+              className="h-14 rounded-xl border-border/50 px-8 font-display text-lg font-bold text-foreground backdrop-blur-sm"
             >
-              Explore Demo
+              EXPLORE DEMO
             </Button>
           </motion.div>
         </div>
       </section>
 
       {/* Features */}
-      <section className="mx-auto w-full max-w-5xl px-6 pb-24">
+      <section className="relative z-10 mx-auto w-full max-w-5xl px-6 pb-24">
         <motion.p
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.4 }}
-          className="mb-10 text-center font-display text-sm font-semibold uppercase tracking-widest text-muted-foreground"
+          className="mb-10 text-center font-mono text-[10px] font-medium tracking-[0.3em] text-muted-foreground"
         >
-          Why Tapestry changes everything
+          WHY TAPESTRY CHANGES EVERYTHING
         </motion.p>
-        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <FeatureCard
             icon={Users}
             title="Portable Identity"
@@ -150,9 +139,9 @@ const Index = () => {
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-border px-6 py-6">
-        <p className="text-center text-sm text-muted-foreground">
-          Built for the Tapestry Hackathon · Solana · 2025
+      <footer className="relative z-10 border-t border-border/30 px-6 py-6">
+        <p className="text-center font-mono text-[10px] tracking-widest text-muted-foreground">
+          BUILT FOR THE TAPESTRY HACKATHON · SOLANA · 2025
         </p>
       </footer>
     </div>
