@@ -1,178 +1,153 @@
 
 
-# Rebuild Demo: Full Interactive Gameplay Experience
+# Integrate Wallet, Tapestry, and Real /play Route
 
 ## Overview
-Rebuild the `/demo` flow to match the full Find60 game vision with split-screen layout, interactive puzzle fields, hunter/hunted asymmetric experiences, bounty system, and agent integration. The demo will showcase ALL three modes with the Hunter experience as the primary walkthrough.
+
+Transform the `/play` route from a placeholder into a fully functional flow: real Solana wallet connection, Tapestry identity resolution via a backend function, and a live lobby that feeds into matchmaking.
 
 ---
 
-## Step-by-Step Demo Flow (7 Steps, up from 5)
-
-### Step 1: Welcome (minor update)
-- Keep current design, add brief explainer text about the 3 modes
-- "Experience the hunt. No wallet needed."
-
-### Step 2: Wallet Connect + Identity Reveal (keep as-is)
-- Current implementation is solid -- simulated connect, Tapestry identity reveal, cross-app reputation bars
-
-### Step 3: Mode Select (rebuild)
-- Show 3 mode cards with updated descriptions matching the branding doc:
-  - HUNTER: "Prove you can find me in 60 seconds" 
-  - HUNTED: "Make them work to know you"
-  - DUEL: "Find each other -- first wins"
-- Each card shows matching logic text (e.g., "Hunter matched with Hunted")
-- Pre-select HUNTER for the guided demo
-- "FIND MATCH" button triggers matching animation
-- Matching animation shows Tapestry social graph scanning
-- Opponent card reveals with their profile + bounty preview
-
-### Step 4: Game Screen -- HUNTER Experience (complete rebuild)
-**Split-screen layout:**
+## Architecture
 
 ```text
-+---------------------------+---------------------------+
-|                           |                           |
-|       CHAT ZONE           |      PUZZLE ZONE          |
-|       (left side)         |      (right side)         |
-|                           |                           |
-|  Messages scroll here     |  SOLVE THE PUZZLE:        |
-|                           |                           |
-|  Them: "I love sunny      |  First Name: [________]   |
-|   places"                 |  (Clue: "Starts with S")  |
-|                           |                           |
-|  You: "Beach person?"     |  Twitter: [@________]     |
-|                           |  (Locked - no clue yet)   |
-|  Them: "Maybe"            |                           |
-|                           |  Location: [________]     |
-|  CLUE DROPPED:            |  (Locked - no clue yet)   |
-|  "I'm in a city-state"    |                           |
-|                           |  Timer: 00:47             |
-|                           |  Clues: 2/5               |
-|                           |  Bounty: 0.05 SOL         |
-|                           |                           |
-|                           |  [SUBMIT ANSWER]          |
-+---------------------------+---------------------------+
+User clicks "PLAY FOR REAL"
+        |
+        v
+  [Solana Wallet Adapter]
+  Connect Phantom / Solflare
+        |
+        v
+  [Edge Function: tapestry-identity]
+  POST wallet address --> Tapestry API (devnet)
+  findOrCreate profile, fetch reputation
+        |
+        v
+  [Profile upserted in DB]
+  profiles table updated with Tapestry data
+        |
+        v
+  [Play Lobby UI]
+  Shows identity card, mode select, "Find Match"
+        |
+        v
+  [Edge Function: matchmaking]
+  Inserts into matchmaking_queue
+  Listens via Realtime for match
+        |
+        v
+  [Game Screen] (reuses demo components)
 ```
 
-- **Timer**: 60-second countdown at top, goes yellow at 30s, red/pulsing at 15s
-- **Chat zone (left)**: Auto-playing scripted messages + clue drop notifications appear inline
-- **Puzzle zone (right)**: Interactive input fields that unlock as clues drop
-  - Fields start locked with a lock icon
-  - When a clue drops, the corresponding field unlocks with an animation
-  - User can type in guesses (pre-filled for demo, but interactive)
-  - Wrong guess shows red flash + "-10 points" penalty animation
-- **Clue drops**: Timed reveals at 45s, 30s, 15s (auto-clues) with dramatic animation
-- **Bounty tracker**: Shows current bounty with time multiplier updating live
-- At ~43 seconds remaining, auto-fill correct answers and submit
-- **"FOUND!" explosion screen** with confetti-style animation
+---
 
-### Step 5: Game Screen -- HUNTED Experience (new, optional view)
-- After the Hunter demo completes, offer: "Want to see the Hunted side?"
-- Shows the Hunted perspective:
-  - Chat zone (left) -- same chat but from opposite side
-  - Clue Control Panel (right) -- "Drop Hint" button, auto-clue countdown, misdirection tools
-  - Shows strategic decision-making: when to drop clues, how to mislead
-- This step is skippable
+## Step 1: Store the Tapestry API Key
 
-### Step 6: Post-Match Results (rebuild)
-- **Victory card**: "HUNTED SUCCESSFULLY!" with time and bounty
-- **Bounty breakdown**: Base bounty + time multiplier + difficulty bonus = total
-- **Profile unlocked**: Full opponent profile revealed with "Send Connection Request" button
-- **Vibe score update**: Animated score change with cross-app ripple effect
-- **Rating**: Fire / Good / Meh buttons
-- **Progression preview**: "You're now a Skilled Hunter (234/500 points)" with progress bar
-- **Share card preview**: Auto-generated shareable card showing stats
+Request the `TAPESTRY_API_KEY` secret. This is needed by the backend function to call Tapestry's API. You will be prompted to enter a key from [app.usetapestry.dev](https://app.usetapestry.dev).
 
-### Step 7: Agent Demo (new step)
-- "Now try hunting an AI agent..."
-- Quick 15-second compressed demo showing AI as Hunted
-- AI drops faster clues, gives cryptic responses
-- Shows the agent solving YOUR puzzle in reverse (AI as Hunter view)
-- "I survived an AI hunt" badge showcase
-- Badge: "TURING TEST: PASSED"
+## Step 2: Solana Wallet Provider
+
+**New file: `src/providers/WalletProvider.tsx`**
+
+- Wraps the app in `ConnectionProvider` + `WalletProvider` + `WalletModalProvider` from `@solana/wallet-adapter-react-ui`
+- Configured for **devnet** (`clusterApiUrl('devnet')`)
+- Includes Phantom and Solflare wallet adapters
+- Import the default wallet adapter CSS
+
+**Update: `src/App.tsx`**
+
+- Wrap the entire app with `<WalletProviderWrapper>` so wallet state is available on all routes
+
+## Step 3: Tapestry Identity Edge Function
+
+**New file: `supabase/functions/tapestry-identity/index.ts`**
+
+- Accepts `POST { walletAddress: string }`
+- Calls Tapestry devnet API: `https://api.dev.usetapestry.dev/v1/profiles/findOrCreate`
+  - Uses the `TAPESTRY_API_KEY` secret
+  - Namespace: `find60`
+  - Blockchain: `SOLANA`
+  - Execution: `FAST_UNCONFIRMED`
+- If the profile exists, also fetches followers/following count for reputation display
+- Returns the Tapestry profile data (username, bio, image, social connections)
+
+## Step 4: Tapestry Hook
+
+**New file: `src/hooks/useTapestryIdentity.ts`**
+
+- Custom React hook that takes a `walletAddress` (from the wallet adapter)
+- Calls the `tapestry-identity` edge function via `supabase.functions.invoke()`
+- Returns `{ profile, isLoading, error }`
+- On successful response, upserts the profile into the `profiles` table with the Tapestry data
+
+## Step 5: Rebuild /play Page
+
+**Rewrite: `src/pages/Play.tsx`**
+
+Three-phase flow within the page:
+
+### Phase 1: Connect Wallet
+- Uses `useWallet()` from the adapter
+- Shows the standard "Connect Wallet" button (Phantom/Solflare auto-detected)
+- Animated with the existing cyberpunk styling
+- On connect, auto-advances to Phase 2
+
+### Phase 2: Identity Reveal
+- Calls `useTapestryIdentity(walletAddress)`
+- Shows loading state ("Scanning Tapestry graph...")
+- Reveals the profile card with real data: username, avatar, vibe score
+- If no Tapestry profile exists, prompts to create one (username input)
+- Shows "Enter the Arena" button
+
+### Phase 3: Lobby
+- Mode select (Hunter / Hunted / Duel) -- reuses styling from demo
+- Bounty stake input (0.01 - 1.0 SOL, devnet tokens)
+- "Find Match" button that:
+  - Inserts into `matchmaking_queue` via an edge function
+  - Subscribes to Realtime channel for match updates
+  - Shows searching animation with player count
+- On match found, navigates to game screen (future step -- for now shows "Match found!" with opponent card)
+
+## Step 6: Matchmaking Edge Function
+
+**New file: `supabase/functions/matchmaking/index.ts`**
+
+- `POST { profileId, role, stakeAmount }`
+- Inserts player into `matchmaking_queue`
+- Checks for compatible opponent (opposite role, similar vibe score range)
+- If match found: creates a `games` row, updates both queue entries to `matched`, returns game ID
+- If no match: returns `{ status: "waiting" }` -- client listens via Realtime for updates
+
+## Step 7: Profile Creation Flow
+
+**New file: `src/components/play/CreateTapestryProfile.tsx`**
+
+- Shown when a connected wallet has no Tapestry profile
+- Username input with availability check (calls Tapestry API)
+- Optional bio field
+- "Create Profile" button calls the edge function to create on Tapestry
+
+## New/Updated Files Summary
+
+| File | Action | Purpose |
+|------|--------|---------|
+| `src/providers/WalletProvider.tsx` | Create | Solana wallet adapter wrapper |
+| `src/App.tsx` | Update | Wrap with wallet provider |
+| `supabase/functions/tapestry-identity/index.ts` | Create | Tapestry API proxy |
+| `supabase/functions/matchmaking/index.ts` | Create | Queue + match logic |
+| `src/hooks/useTapestryIdentity.ts` | Create | Wallet-to-identity hook |
+| `src/pages/Play.tsx` | Rewrite | 3-phase real play flow |
+| `src/components/play/CreateTapestryProfile.tsx` | Create | New profile onboarding |
+| `src/components/play/PlayLobby.tsx` | Create | Mode select + matchmaking UI |
+| `src/components/play/IdentityCard.tsx` | Create | Real identity display card |
 
 ---
 
-## New/Updated Files
+## Technical Notes
 
-### New Components
-- `src/components/demo/DemoGameplayHunter.tsx` -- Split-screen Hunter game (replaces current DemoGameplay)
-- `src/components/demo/DemoGameplayHunted.tsx` -- Split-screen Hunted game (new)
-- `src/components/demo/DemoAgentDemo.tsx` -- Agent showcase (new)
-- `src/components/demo/PuzzleZone.tsx` -- Right-side puzzle fields component
-- `src/components/demo/ChatZone.tsx` -- Left-side chat component
-- `src/components/demo/BountyTracker.tsx` -- Live bounty display
-- `src/components/demo/GameTimer.tsx` -- Reusable countdown timer with urgency states
-- `src/components/demo/ShareCard.tsx` -- Auto-generated shareable result card
-
-### Updated Components
-- `src/pages/Demo.tsx` -- Expand from 5 to 7 steps, add step labels
-- `src/components/demo/DemoModeSelect.tsx` -- Update descriptions, add matching logic text, bounty preview
-- `src/components/demo/DemoResults.tsx` -- Add bounty breakdown, progression, share card, connection request
-- `src/components/demo/DemoWelcome.tsx` -- Minor copy updates
-
-### Updated Data
-- `src/lib/mock-data.ts` -- Add:
-  - `MOCK_PUZZLE_FIELDS` -- The puzzle fields (name, twitter, location, profession, fun fact) with clue text and unlock times
-  - `MOCK_BOUNTY` -- Base bounty, time multiplier table, difficulty bonuses
-  - `MOCK_HUNTED_CLUES` -- Clue arsenal for Hunted perspective  
-  - `MOCK_AGENT` -- AI agent profile (AlphaBot)
-  - `MOCK_PROGRESSION` -- Hunter/Hunted tier data
-  - `MOCK_SHARE_CARD` -- Template for shareable result
-
----
-
-## Technical Details
-
-### Split-Screen Layout
-- Uses CSS Grid (`grid-cols-2`) on desktop, stacks vertically on mobile
-- Chat zone scrolls independently with `overflow-y-auto`
-- Puzzle zone is sticky/fixed on desktop
-- Responsive: on mobile, tabs switch between Chat and Puzzle views
-
-### Puzzle Field Logic
-- Fields rendered from `MOCK_PUZZLE_FIELDS` array
-- Each field has: `label`, `answer`, `clueText`, `unlockTime`, `isRequired`
-- Fields start as `locked` (greyed out with lock icon)
-- When timer crosses `unlockTime`, field animates to `unlocked` (glowing border, input enabled)
-- User can type (pre-filled after brief delay in demo mode)
-- Submit button disabled until all required fields filled
-- Wrong submit: red flash animation, -10 points, fields shake
-
-### Bounty Calculation (Visual)
-- Base: 0.01 SOL
-- Per optional field: +0.01 SOL each
-- Time multiplier displayed live: <20s = 0.5x, 20-40s = 1x, 40-55s = 1.5x, 55-60s = 2x
-- Final bounty animates on result screen with breakdown
-
-### Chat Auto-Play
-- Messages appear at scripted intervals (tied to timer)
-- Clue drops appear as special styled messages with a lightbulb icon
-- Chat auto-scrolls to latest message
-- On mobile, a notification badge appears on the Chat tab when new messages arrive
-
-### Timer Component
-- Reusable `GameTimer` with props for duration, urgency thresholds, and callbacks
-- Visual states: normal (blue), warning (yellow at 30s), urgent (red pulse at 15s)
-- Large bold monospace display
-- Progress bar underneath
-
-### Demo Step Navigation
-- Steps: INIT, LINK, MODE, HUNT, EVADE (optional), DATA, AGENT
-- Step labels in progress bar update
-- EVADE step is skippable (button: "Skip" or "See Hunted Side")
-- Back button returns to previous step
-
----
-
-## Design Approach
-
-- Maintain the existing cyberpunk/digital hunt aesthetic with neon accents
-- Split screen uses a subtle vertical divider with a glow effect
-- Puzzle fields use terminal-style monospace inputs with blinking cursors
-- Clue drops have a "data incoming" animation (slide down + flash)
-- Bounty tracker pulses green when multiplier increases
-- Share card uses the brand gradient background with bold stat typography
-- Agent demo uses a distinct purple/violet accent to differentiate from human play
+- The `socialfi` npm package is designed for Node.js/server environments. Since we are in a browser context, the edge functions will call the Tapestry REST API directly using `fetch` instead of the SDK. This avoids bundling issues.
+- Wallet adapter CSS will be imported in the provider file (`@solana/wallet-adapter-react-ui/styles.css`).
+- All Tapestry API calls go through edge functions to keep the API key server-side.
+- The Tapestry devnet URL is `https://api.dev.usetapestry.dev/v1/`.
+- The app namespace on Tapestry will be `find60`.
 
