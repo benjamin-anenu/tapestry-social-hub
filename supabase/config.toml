@@ -8,3 +8,6 @@ verify_jwt = false
 
 [functions.bot-gameplay]
 verify_jwt = false
+
+[functions.player-chat]
+verify_jwt = false

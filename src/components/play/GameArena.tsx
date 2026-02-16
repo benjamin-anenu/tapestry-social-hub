@@ -62,6 +62,7 @@ const GameArena = ({ gameId, role, isBot, walletAddress }: GameArenaProps) => {
   const [wrongGuess, setWrongGuess] = useState(false);
   const [solved, setSolved] = useState(false);
   const [botTriggered, setBotTriggered] = useState(false);
+  const [sendingChat, setSendingChat] = useState(false);
 
   const chatLog = (game?.chat_log as unknown as ChatMessage[]) ?? [];
   const cluesDropped = (game?.clues_dropped as unknown as ClueDropMessage[]) ?? [];
@@ -124,13 +125,26 @@ const GameArena = ({ gameId, role, isBot, walletAddress }: GameArenaProps) => {
   }, []);
 
   const handleTimerComplete = useCallback(async () => {
-    // Time's up — if game not already completed, end it
     if (game?.status !== "completed") {
       await supabase.functions.invoke("bot-gameplay", {
         body: { gameId, action: "timeout" },
       }).catch(() => {});
     }
   }, [game?.status, gameId]);
+
+  const handleSendChat = useCallback(async (text: string) => {
+    if (sendingChat) return;
+    setSendingChat(true);
+    try {
+      await supabase.functions.invoke("player-chat", {
+        body: { gameId, message: text },
+      });
+    } catch (err) {
+      console.error("Send chat error:", err);
+    } finally {
+      setSendingChat(false);
+    }
+  }, [gameId, sendingChat]);
 
   const handleSubmit = async () => {
     const allCorrect = puzzleFields
@@ -267,6 +281,8 @@ const GameArena = ({ gameId, role, isBot, walletAddress }: GameArenaProps) => {
           timeLeft={timeLeft}
           messages={liveChatMessages}
           clueDrops={liveClueDrops}
+          onSendMessage={handleSendChat}
+          disabled={sendingChat || isCompleted}
         />
 
         {/* Puzzle Zone (Hunter) or Status (Hunted) */}

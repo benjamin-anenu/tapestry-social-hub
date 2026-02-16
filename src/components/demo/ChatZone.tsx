@@ -1,7 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { MessageCircle, Lightbulb } from "lucide-react";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { MessageCircle, Lightbulb, Send } from "lucide-react";
+import { Input } from "@/components/ui/input";
 
 interface ChatMessage {
   time: number;
@@ -19,25 +19,41 @@ interface ChatZoneProps {
   timeLeft: number;
   messages: ChatMessage[];
   clueDrops: ClueDropMessage[];
+  onSendMessage?: (text: string) => void;
+  disabled?: boolean;
 }
 
-const ChatZone = ({ timeLeft, messages, clueDrops }: ChatZoneProps) => {
+const ChatZone = ({ timeLeft, messages, clueDrops, onSendMessage, disabled }: ChatZoneProps) => {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [inputValue, setInputValue] = useState("");
 
   const visibleMessages = messages.filter((m) => timeLeft <= m.time);
   const visibleClues = clueDrops.filter((c) => timeLeft <= c.time);
 
-  // Merge and sort by time descending (most recent = lowest time remaining = bottom)
   const allItems: Array<{ type: "msg" | "clue"; time: number; data: any }> = [
     ...visibleMessages.map((m) => ({ type: "msg" as const, time: m.time, data: m })),
     ...visibleClues.map((c) => ({ type: "clue" as const, time: c.time, data: c })),
-  ].sort((a, b) => b.time - a.time); // higher time = appeared first
+  ].sort((a, b) => b.time - a.time);
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [allItems.length]);
+
+  const handleSend = () => {
+    const trimmed = inputValue.trim();
+    if (!trimmed || !onSendMessage) return;
+    onSendMessage(trimmed);
+    setInputValue("");
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
 
   return (
     <div className="flex h-full flex-col rounded-xl border border-border/50 bg-card/80 backdrop-blur-sm">
@@ -69,7 +85,7 @@ const ChatZone = ({ timeLeft, messages, clueDrops }: ChatZoneProps) => {
             const isYou = msg.sender === "you";
             return (
               <motion.div
-                key={`msg-${msg.time}-${msg.sender}`}
+                key={`msg-${msg.time}-${msg.sender}-${i}`}
                 initial={{ opacity: 0, y: 5 }}
                 animate={{ opacity: 1, y: 0 }}
                 className={`flex ${isYou ? "justify-end" : "justify-start"}`}
@@ -94,6 +110,29 @@ const ChatZone = ({ timeLeft, messages, clueDrops }: ChatZoneProps) => {
           </p>
         )}
       </div>
+
+      {/* Chat input */}
+      {onSendMessage && (
+        <div className="border-t border-border/50 p-3">
+          <div className="flex gap-2">
+            <Input
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Type a message..."
+              disabled={disabled}
+              className="h-8 flex-1 border-border/30 bg-background/50 font-mono text-xs placeholder:text-muted-foreground/50"
+            />
+            <button
+              onClick={handleSend}
+              disabled={disabled || !inputValue.trim()}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-opacity disabled:opacity-30 hover:opacity-90"
+            >
+              <Send className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
