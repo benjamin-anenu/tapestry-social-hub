@@ -9,6 +9,7 @@ import type { TapestryProfile } from "@/hooks/useTapestryIdentity";
 interface PlayLobbyProps {
   profile: TapestryProfile;
   profileId: string;
+  walletAddress: string;
 }
 
 type Role = "hunter" | "hunted" | "duel";
@@ -19,7 +20,7 @@ const roles: { value: Role; label: string; icon: React.ElementType; desc: string
   { value: "duel", label: "Duel", icon: Swords, desc: "Both hunt each other" },
 ];
 
-const PlayLobby = ({ profile, profileId }: PlayLobbyProps) => {
+const PlayLobby = ({ profile, profileId, walletAddress }: PlayLobbyProps) => {
   const [role, setRole] = useState<Role>("hunter");
   const [stake, setStake] = useState("0.01");
   const [searching, setSearching] = useState(false);
@@ -59,12 +60,8 @@ const PlayLobby = ({ profile, profileId }: PlayLobbyProps) => {
     setMatchStatus(null);
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
       const { data, error } = await supabase.functions.invoke("matchmaking", {
-        body: { profileId, role, stakeAmount: parseFloat(stake) || 0.01 },
-        headers: session?.access_token
-          ? { Authorization: `Bearer ${session.access_token}` }
-          : undefined,
+        body: { profileId, walletAddress, role, stakeAmount: parseFloat(stake) || 0.01 },
       });
 
       if (error) throw error;
