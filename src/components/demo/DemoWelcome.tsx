@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Play, Users, Crosshair } from "lucide-react";
+import { Play, Users, Crosshair, Search, Ghost, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MOCK_ONLINE_PLAYERS } from "@/lib/mock-data";
 
@@ -26,7 +26,6 @@ const DemoWelcome = ({ onNext }: DemoWelcomeProps) => {
         <div className="flex h-24 w-24 items-center justify-center rounded-2xl border border-primary/30 bg-primary/10 glow-blue">
           <Crosshair className="h-12 w-12 text-primary" />
         </div>
-        {/* Pulse ring */}
         <div className="absolute inset-0 animate-ping rounded-2xl border border-primary/20" style={{ animationDuration: "2s" }} />
       </motion.div>
 
@@ -50,6 +49,25 @@ const DemoWelcome = ({ onNext }: DemoWelcomeProps) => {
         </motion.p>
       </div>
 
+      {/* 3 Mode Explainer */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.45 }}
+        className="flex gap-4"
+      >
+        {[
+          { icon: Search, label: "HUNT" },
+          { icon: Ghost, label: "HIDE" },
+          { icon: Zap, label: "DUEL" },
+        ].map((m) => (
+          <div key={m.label} className="flex flex-col items-center gap-1">
+            <m.icon className="h-4 w-4 text-primary/60" />
+            <span className="font-mono text-[8px] tracking-widest text-muted-foreground">{m.label}</span>
+          </div>
+        ))}
+      </motion.div>
+
       {/* Online indicator */}
       <motion.div
         initial={{ opacity: 0 }}
@@ -63,8 +81,7 @@ const DemoWelcome = ({ onNext }: DemoWelcomeProps) => {
         </span>
         <Users className="h-3.5 w-3.5 text-muted-foreground" />
         <span className="font-mono text-xs text-foreground">
-          <span className="text-secondary font-semibold">{MOCK_ONLINE_PLAYERS}</span>
-          {" "}ONLINE
+          <span className="text-secondary font-semibold">{MOCK_ONLINE_PLAYERS}</span>{" "}ONLINE
         </span>
       </motion.div>
 
@@ -84,11 +101,10 @@ const DemoWelcome = ({ onNext }: DemoWelcomeProps) => {
             <Play className="h-5 w-5" />
             ENTER DEMO
           </span>
-          {/* Shimmer */}
           <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/10 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
         </Button>
         <p className="font-mono text-[10px] tracking-wider text-muted-foreground">
-          NO WALLET · SIMULATED · 2 MIN WALKTHROUGH
+          EXPERIENCE THE HUNT · NO WALLET NEEDED
         </p>
       </motion.div>
     </motion.div>

@@ -5,18 +5,22 @@ import { ArrowLeft, Terminal } from "lucide-react";
 import DemoWelcome from "@/components/demo/DemoWelcome";
 import DemoWalletConnect from "@/components/demo/DemoWalletConnect";
 import DemoModeSelect from "@/components/demo/DemoModeSelect";
-import DemoGameplay from "@/components/demo/DemoGameplay";
+import DemoGameplayHunter from "@/components/demo/DemoGameplayHunter";
+import DemoGameplayHunted from "@/components/demo/DemoGameplayHunted";
 import DemoResults from "@/components/demo/DemoResults";
+import DemoAgentDemo from "@/components/demo/DemoAgentDemo";
 
-const STEP_LABELS = ["INIT", "LINK", "MODE", "HUNT", "DATA"];
+const STEP_LABELS = ["INIT", "LINK", "MODE", "HUNT", "EVADE", "DATA", "AGENT"];
+const TOTAL_STEPS = STEP_LABELS.length;
 
 const Demo = () => {
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
 
-  const next = () => setStep((s) => Math.min(s + 1, 4));
+  const next = () => setStep((s) => Math.min(s + 1, TOTAL_STEPS - 1));
   const back = () => (step === 0 ? navigate("/") : setStep((s) => s - 1));
   const restart = () => setStep(0);
+  const skipEvade = () => setStep(5); // jump to DATA
 
   return (
     <div className="relative flex min-h-screen flex-col bg-background grid-bg overflow-hidden scanlines">
@@ -38,14 +42,12 @@ const Demo = () => {
 
         <div className="flex items-center gap-2">
           <Terminal className="h-3.5 w-3.5 text-primary" />
-          <span className="font-mono text-xs font-medium tracking-widest text-foreground">
-            FIND60
-          </span>
+          <span className="font-mono text-xs font-medium tracking-widest text-foreground">FIND60</span>
           <span className="font-mono text-[10px] text-primary">DEMO</span>
         </div>
 
         <span className="font-mono text-[10px] text-muted-foreground">
-          [{step + 1}/5]
+          [{step + 1}/{TOTAL_STEPS}]
         </span>
       </div>
 
@@ -81,9 +83,13 @@ const Demo = () => {
           {step === 0 && <DemoWelcome key="welcome" onNext={next} />}
           {step === 1 && <DemoWalletConnect key="wallet" onNext={next} />}
           {step === 2 && <DemoModeSelect key="mode" onNext={next} />}
-          {step === 3 && <DemoGameplay key="game" onNext={next} />}
-          {step === 4 && (
-            <DemoResults key="results" onRestart={restart} onHome={() => navigate("/")} />
+          {step === 3 && <DemoGameplayHunter key="hunter" onNext={next} />}
+          {step === 4 && <DemoGameplayHunted key="hunted" onNext={next} onSkip={skipEvade} />}
+          {step === 5 && (
+            <DemoResults key="results" onRestart={restart} onHome={() => navigate("/")} onNext={next} />
+          )}
+          {step === 6 && (
+            <DemoAgentDemo key="agent" onNext={() => navigate("/")} />
           )}
         </AnimatePresence>
       </div>
