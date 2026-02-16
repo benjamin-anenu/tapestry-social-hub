@@ -14,7 +14,245 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      games: {
+        Row: {
+          bounty_base: number | null
+          bounty_total: number | null
+          chat_log: Json | null
+          clues_dropped: Json | null
+          created_at: string
+          ended_at: string | null
+          hunted_id: string
+          hunted_stake: number | null
+          hunter_id: string
+          hunter_stake: number | null
+          hunter_won: boolean | null
+          id: string
+          puzzle_fields: Json | null
+          role_mode: Database["public"]["Enums"]["game_role"]
+          solved_at: number | null
+          started_at: string | null
+          status: Database["public"]["Enums"]["game_status"]
+          time_remaining: number | null
+        }
+        Insert: {
+          bounty_base?: number | null
+          bounty_total?: number | null
+          chat_log?: Json | null
+          clues_dropped?: Json | null
+          created_at?: string
+          ended_at?: string | null
+          hunted_id: string
+          hunted_stake?: number | null
+          hunter_id: string
+          hunter_stake?: number | null
+          hunter_won?: boolean | null
+          id?: string
+          puzzle_fields?: Json | null
+          role_mode?: Database["public"]["Enums"]["game_role"]
+          solved_at?: number | null
+          started_at?: string | null
+          status?: Database["public"]["Enums"]["game_status"]
+          time_remaining?: number | null
+        }
+        Update: {
+          bounty_base?: number | null
+          bounty_total?: number | null
+          chat_log?: Json | null
+          clues_dropped?: Json | null
+          created_at?: string
+          ended_at?: string | null
+          hunted_id?: string
+          hunted_stake?: number | null
+          hunter_id?: string
+          hunter_stake?: number | null
+          hunter_won?: boolean | null
+          id?: string
+          puzzle_fields?: Json | null
+          role_mode?: Database["public"]["Enums"]["game_role"]
+          solved_at?: number | null
+          started_at?: string | null
+          status?: Database["public"]["Enums"]["game_status"]
+          time_remaining?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "games_hunted_id_fkey"
+            columns: ["hunted_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "games_hunter_id_fkey"
+            columns: ["hunter_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      matchmaking_queue: {
+        Row: {
+          created_at: string
+          id: string
+          matched_with: string | null
+          profile_id: string
+          role: Database["public"]["Enums"]["game_role"]
+          stake_amount: number | null
+          status: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          matched_with?: string | null
+          profile_id: string
+          role: Database["public"]["Enums"]["game_role"]
+          stake_amount?: number | null
+          status?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          matched_with?: string | null
+          profile_id?: string
+          role?: Database["public"]["Enums"]["game_role"]
+          stake_amount?: number | null
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "matchmaking_queue_matched_with_fkey"
+            columns: ["matched_with"]
+            isOneToOne: false
+            referencedRelation: "matchmaking_queue"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "matchmaking_queue_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          avg_find_time: number | null
+          created_at: string
+          display_name: string | null
+          find_rate: number | null
+          find_score: number | null
+          games_played: number | null
+          games_won: number | null
+          hide_score: number | null
+          hide_streak: number | null
+          hunted_points: number | null
+          hunter_points: number | null
+          id: string
+          tapestry_id: string | null
+          total_sol_earned: number | null
+          total_sol_staked: number | null
+          updated_at: string
+          user_id: string
+          username: string | null
+          vibe_score: number | null
+          wallet_address: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          avg_find_time?: number | null
+          created_at?: string
+          display_name?: string | null
+          find_rate?: number | null
+          find_score?: number | null
+          games_played?: number | null
+          games_won?: number | null
+          hide_score?: number | null
+          hide_streak?: number | null
+          hunted_points?: number | null
+          hunter_points?: number | null
+          id?: string
+          tapestry_id?: string | null
+          total_sol_earned?: number | null
+          total_sol_staked?: number | null
+          updated_at?: string
+          user_id: string
+          username?: string | null
+          vibe_score?: number | null
+          wallet_address: string
+        }
+        Update: {
+          avatar_url?: string | null
+          avg_find_time?: number | null
+          created_at?: string
+          display_name?: string | null
+          find_rate?: number | null
+          find_score?: number | null
+          games_played?: number | null
+          games_won?: number | null
+          hide_score?: number | null
+          hide_streak?: number | null
+          hunted_points?: number | null
+          hunter_points?: number | null
+          id?: string
+          tapestry_id?: string | null
+          total_sol_earned?: number | null
+          total_sol_staked?: number | null
+          updated_at?: string
+          user_id?: string
+          username?: string | null
+          vibe_score?: number | null
+          wallet_address?: string
+        }
+        Relationships: []
+      }
+      puzzle_templates: {
+        Row: {
+          clues: Json
+          created_at: string
+          fields: Json
+          id: string
+          is_active: boolean | null
+          privacy_level: string
+          profile_id: string
+          updated_at: string
+        }
+        Insert: {
+          clues?: Json
+          created_at?: string
+          fields?: Json
+          id?: string
+          is_active?: boolean | null
+          privacy_level?: string
+          profile_id: string
+          updated_at?: string
+        }
+        Update: {
+          clues?: Json
+          created_at?: string
+          fields?: Json
+          id?: string
+          is_active?: boolean | null
+          privacy_level?: string
+          profile_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "puzzle_templates_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -23,7 +261,13 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      game_role: "hunter" | "hunted" | "duel"
+      game_status:
+        | "waiting"
+        | "matched"
+        | "in_progress"
+        | "completed"
+        | "abandoned"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +394,15 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      game_role: ["hunter", "hunted", "duel"],
+      game_status: [
+        "waiting",
+        "matched",
+        "in_progress",
+        "completed",
+        "abandoned",
+      ],
+    },
   },
 } as const
