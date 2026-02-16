@@ -6,7 +6,7 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const TAPESTRY_BASE = "https://api.dev.usetapestry.dev/v1";
+const TAPESTRY_BASE = "https://api.usetapestry.dev/api/v1";
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -28,12 +28,13 @@ serve(async (req) => {
     }
 
     // findOrCreate profile on Tapestry
+    const defaultUsername = `find60_${walletAddress.slice(0, 8).toLowerCase()}`;
     const body: Record<string, string> = {
       walletAddress,
+      username: username || defaultUsername,
       blockchain: "SOLANA",
       execution: "FAST_UNCONFIRMED",
     };
-    if (username) body.username = username;
     if (bio) body.bio = bio;
 
     const profileRes = await fetch(
@@ -56,18 +57,19 @@ serve(async (req) => {
     let followers = 0;
     let following = 0;
     try {
+      const profileId = profile.profile?.username || username;
       const followersRes = await fetch(
-        `${TAPESTRY_BASE}/followers/${profile.profile?.username || username}?apiKey=${TAPESTRY_API_KEY}&namespace=find60`
+        `${TAPESTRY_BASE}/profiles/${profileId}/followers?apiKey=${TAPESTRY_API_KEY}&namespace=find60`
       );
       if (followersRes.ok) {
         const data = await followersRes.json();
         followers = data?.followers?.length ?? 0;
       } else {
-        await followersRes.text(); // consume body
+        await followersRes.text();
       }
 
       const followingRes = await fetch(
-        `${TAPESTRY_BASE}/following/${profile.profile?.username || username}?apiKey=${TAPESTRY_API_KEY}&namespace=find60`
+        `${TAPESTRY_BASE}/profiles/${profileId}/following?apiKey=${TAPESTRY_API_KEY}&namespace=find60`
       );
       if (followingRes.ok) {
         const data = await followingRes.json();
