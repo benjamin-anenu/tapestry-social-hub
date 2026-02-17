@@ -157,11 +157,16 @@ Deno.serve(async (req) => {
 
     if (sessionErr) throw sessionErr;
 
+    const initialMessages = [
+      { sender: "them", text: greeting, time: Date.now() },
+    ];
+
     return new Response(JSON.stringify({
       sessionId: session.id,
       role: "a",
-      partnerName: botProfile.display_name ?? "Amara",
+      partnerName: botProfile.username === "queen_tapestry" ? "Queen Tapestry" : botProfile.display_name ?? "Amara",
       isBot: true,
+      initialMessages,
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

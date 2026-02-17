@@ -154,7 +154,7 @@ Deno.serve(async (req) => {
       .update({ chat_log: chatLog })
       .eq("id", sessionId);
 
-    return new Response(JSON.stringify({ ok: true }), {
+    return new Response(JSON.stringify({ ok: true, botReply: amaraResponse }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
