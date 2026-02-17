@@ -20,3 +20,9 @@ verify_jwt = false
 
 [functions.vibe-verdict]
 verify_jwt = false
+
+[functions.vibe-bot-chat]
+verify_jwt = false
+
+[functions.vibe-bot-verdict]
+verify_jwt = false

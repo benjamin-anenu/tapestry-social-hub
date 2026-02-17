@@ -5,6 +5,15 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+const BOT_WALLET = "BOT_AMARA_001";
+
+const AMARA_GREETINGS = [
+  "Hey! 👋 I'm Amara. So tell me, what's your vibe?",
+  "Hi there! I'm Amara from Lagos 🇳🇬 What brings you here today?",
+  "Hey hey! Amara here. You better be interesting o 😄 What's good?",
+  "Hello! I'm Amara. Let's see if you can keep up with a Lagos babe 💛 What's your story?",
+];
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -74,12 +83,6 @@ Deno.serve(async (req) => {
       candidates = globalMatches;
     }
 
-    if (!candidates || candidates.length === 0) {
-      return new Response(JSON.stringify({ error: "No one online right now — try again in a bit!" }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
     // Filter out users already in active sessions with us
     const { data: activeSessions } = await supabase
       .from("vibe_sessions")
@@ -94,24 +97,60 @@ Deno.serve(async (req) => {
       }
     }
 
-    const filtered = candidates.filter((c) => !excludeIds.has(c.id));
-    if (filtered.length === 0) {
+    const filtered = (candidates ?? []).filter((c) => !excludeIds.has(c.id));
+
+    // If humans found, match with a random human
+    if (filtered.length > 0) {
+      const partner = filtered[Math.floor(Math.random() * filtered.length)];
+
+      const { data: session, error: sessionErr } = await supabase
+        .from("vibe_sessions")
+        .insert({
+          user_a_id: myProfile.id,
+          user_b_id: partner.id,
+          status: "active",
+          chat_log: [],
+        })
+        .select("id")
+        .single();
+
+      if (sessionErr) throw sessionErr;
+
+      return new Response(JSON.stringify({
+        sessionId: session.id,
+        role: "a",
+        partnerName: partner.username ?? "Stranger",
+        isBot: false,
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // === BOT FALLBACK: Match with Amara ===
+    const { data: botProfile } = await supabase
+      .from("profiles")
+      .select("id, username, display_name")
+      .eq("wallet_address", BOT_WALLET)
+      .single();
+
+    if (!botProfile) {
       return new Response(JSON.stringify({ error: "No one online right now — try again in a bit!" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Pick random
-    const partner = filtered[Math.floor(Math.random() * filtered.length)];
+    // Pick a random greeting
+    const greeting = AMARA_GREETINGS[Math.floor(Math.random() * AMARA_GREETINGS.length)];
 
-    // Create vibe session
     const { data: session, error: sessionErr } = await supabase
       .from("vibe_sessions")
       .insert({
         user_a_id: myProfile.id,
-        user_b_id: partner.id,
+        user_b_id: botProfile.id,
         status: "active",
-        chat_log: [],
+        chat_log: [
+          { sender: BOT_WALLET, text: greeting, time: Date.now() },
+        ],
       })
       .select("id")
       .single();
@@ -121,7 +160,8 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({
       sessionId: session.id,
       role: "a",
-      partnerName: partner.username ?? "Stranger",
+      partnerName: botProfile.display_name ?? "Amara",
+      isBot: true,
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

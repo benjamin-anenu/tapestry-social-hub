@@ -29,7 +29,13 @@ const VibeMatch = () => {
   const [error, setError] = useState<string | null>(null);
   const [partnerName, setPartnerName] = useState<string>("Stranger");
   const [myRole, setMyRole] = useState<"a" | "b">("a");
-  const [verdictResult, setVerdictResult] = useState<{ mutual: boolean; partnerProfile?: Record<string, unknown> } | null>(null);
+  const [isBot, setIsBot] = useState(false);
+  const [isTyping, setIsTyping] = useState(false);
+  const [verdictResult, setVerdictResult] = useState<{
+    mutual: boolean;
+    botVerdict?: string;
+    botReason?: string;
+  } | null>(null);
 
   // Find a match on mount
   useEffect(() => {
@@ -51,11 +57,30 @@ const VibeMatch = () => {
           setSessionId(data.sessionId);
           setMyRole(data.role);
           setPartnerName(data.partnerName ?? "Stranger");
+          setIsBot(data.isBot ?? false);
           setPhase("chatting");
+
+          // If bot, load initial greeting from chat_log
+          if (data.isBot) {
+            const { data: sess } = await supabase
+              .from("vibe_sessions")
+              .select("chat_log")
+              .eq("id", data.sessionId)
+              .single();
+            if (sess?.chat_log && Array.isArray(sess.chat_log)) {
+              setMessages(
+                (sess.chat_log as Array<{ sender: string; text: string; time: number }>).map((m) => ({
+                  time: m.time,
+                  sender: m.sender === walletAddress ? "you" : "them",
+                  text: m.text,
+                }))
+              );
+            }
+          }
         } else {
           setError("No one online right now — try again in a bit!");
         }
-      } catch (err) {
+      } catch {
         if (!cancelled) setError("Matchmaking failed. Please try again.");
       }
     };
@@ -83,6 +108,7 @@ const VibeMatch = () => {
                 text: m.text,
               }))
             );
+            setIsTyping(false);
           }
         }
       )
@@ -93,10 +119,18 @@ const VibeMatch = () => {
 
   const handleSendMessage = useCallback(async (text: string) => {
     if (!sessionId || !walletAddress) return;
-    await supabase.functions.invoke("vibe-chat", {
-      body: { sessionId, walletAddress, text },
-    });
-  }, [sessionId, walletAddress]);
+
+    if (isBot) {
+      setIsTyping(true);
+      await supabase.functions.invoke("vibe-bot-chat", {
+        body: { sessionId, walletAddress, text },
+      });
+    } else {
+      await supabase.functions.invoke("vibe-chat", {
+        body: { sessionId, walletAddress, text },
+      });
+    }
+  }, [sessionId, walletAddress, isBot]);
 
   const handleTimerComplete = useCallback(() => {
     setPhase("verdict");
@@ -105,15 +139,22 @@ const VibeMatch = () => {
   const handleVerdict = useCallback(async (verdict: "vibe" | "nah") => {
     if (!sessionId || !walletAddress) return;
     try {
-      const { data } = await supabase.functions.invoke("vibe-verdict", {
-        body: { sessionId, walletAddress, verdict },
-      });
-      setVerdictResult(data);
+      if (isBot) {
+        const { data } = await supabase.functions.invoke("vibe-bot-verdict", {
+          body: { sessionId, walletAddress, userVerdict: verdict },
+        });
+        setVerdictResult(data);
+      } else {
+        const { data } = await supabase.functions.invoke("vibe-verdict", {
+          body: { sessionId, walletAddress, verdict },
+        });
+        setVerdictResult(data);
+      }
       setPhase("result");
     } catch {
       setError("Failed to submit verdict.");
     }
-  }, [sessionId, walletAddress]);
+  }, [sessionId, walletAddress, isBot]);
 
   return (
     <div className="relative flex min-h-screen flex-col items-center bg-background grid-bg overflow-hidden scanlines">
@@ -160,6 +201,15 @@ const VibeMatch = () => {
                   onSendMessage={handleSendMessage}
                 />
               </div>
+              {isTyping && (
+                <motion.p
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="font-mono text-xs text-muted-foreground italic"
+                >
+                  {partnerName} is typing...
+                </motion.p>
+              )}
             </motion.div>
           )}
 
@@ -190,6 +240,11 @@ const VibeMatch = () => {
                   <p className="font-mono text-xs text-muted-foreground">
                     You're now connected! Check My Circle to see their profile.
                   </p>
+                  {isBot && verdictResult.botReason && (
+                    <p className="font-mono text-xs text-primary italic max-w-xs">
+                      "{verdictResult.botReason}"
+                    </p>
+                  )}
                 </>
               ) : (
                 <>
@@ -198,6 +253,11 @@ const VibeMatch = () => {
                   </div>
                   <h2 className="font-display text-2xl font-bold text-foreground">Maybe next time</h2>
                   <p className="font-mono text-xs text-muted-foreground">No worries — there's always more people to meet.</p>
+                  {isBot && verdictResult.botReason && (
+                    <p className="font-mono text-xs text-muted-foreground italic max-w-xs mt-2">
+                      Amara says: "{verdictResult.botReason}"
+                    </p>
+                  )}
                 </>
               )}
               <Button onClick={() => navigate("/play")} className="font-display font-bold" style={{ backgroundImage: "var(--gradient-primary)" }}>
