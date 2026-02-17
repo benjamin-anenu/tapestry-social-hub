@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { User, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
-import { COUNTRIES, CITIES } from "@/lib/locations";
+import { COUNTRIES } from "@/lib/locations";
 
 interface CreateTapestryProfileProps {
   walletAddress: string;
@@ -16,14 +16,31 @@ const CreateTapestryProfile = ({ walletAddress, onCreated }: CreateTapestryProfi
   const [nickname, setNickname] = useState("");
   const [realName, setRealName] = useState("");
   const [country, setCountry] = useState("");
-  const [city, setCity] = useState("");
   const [xHandle, setXHandle] = useState("");
   const [instagramHandle, setInstagramHandle] = useState("");
   const [bio, setBio] = useState("");
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const cities = country ? CITIES[country] ?? [] : [];
+  // Auto-detect country via IP on mount
+  useEffect(() => {
+    const detectCountry = async () => {
+      try {
+        const res = await fetch("https://ipapi.co/json/");
+        const data = await res.json();
+        if (data?.country_name) {
+          // Match against our list
+          const match = COUNTRIES.find(
+            (c) => c.toLowerCase() === data.country_name.toLowerCase()
+          );
+          if (match) setCountry(match);
+        }
+      } catch {
+        // Silently fail — user can still pick manually
+      }
+    };
+    detectCountry();
+  }, []);
 
   const handleCreate = async () => {
     if (!nickname.trim()) return;
@@ -44,7 +61,6 @@ const CreateTapestryProfile = ({ walletAddress, onCreated }: CreateTapestryProfi
         .from("profiles")
         .update({
           real_name: realName.trim() || null,
-          city: city || null,
           country: country || null,
           x_handle: xHandle.trim() || null,
           instagram_handle: instagramHandle.trim() || null,
@@ -66,7 +82,7 @@ const CreateTapestryProfile = ({ walletAddress, onCreated }: CreateTapestryProfi
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="flex w-full max-w-sm flex-col gap-4 rounded-2xl border border-border/50 bg-card/80 p-6 backdrop-blur-sm"
+      className="flex w-full max-w-sm lg:max-w-md flex-col gap-4 rounded-2xl border border-border/50 bg-card/80 p-6 backdrop-blur-sm"
     >
       <div className="flex items-center gap-3">
         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/20">
@@ -79,7 +95,7 @@ const CreateTapestryProfile = ({ walletAddress, onCreated }: CreateTapestryProfi
       </div>
 
       <Input
-        placeholder="Nickname (public) *"
+        placeholder="Nickname (public, permanent) *"
         value={nickname}
         onChange={(e) => setNickname(e.target.value)}
         className="rounded-xl border-border/50 bg-muted/50 font-mono"
@@ -91,29 +107,16 @@ const CreateTapestryProfile = ({ walletAddress, onCreated }: CreateTapestryProfi
         className="rounded-xl border-border/50 bg-muted/50 font-mono"
       />
 
-      <div className="grid grid-cols-2 gap-3">
-        <Select value={country} onValueChange={(v) => { setCountry(v); setCity(""); }}>
-          <SelectTrigger className="rounded-xl border-border/50 bg-muted/50 font-mono text-xs">
-            <SelectValue placeholder="Country" />
-          </SelectTrigger>
-          <SelectContent>
-            {COUNTRIES.map((c) => (
-              <SelectItem key={c} value={c}>{c}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <Select value={city} onValueChange={setCity} disabled={!country}>
-          <SelectTrigger className="rounded-xl border-border/50 bg-muted/50 font-mono text-xs">
-            <SelectValue placeholder="City" />
-          </SelectTrigger>
-          <SelectContent>
-            {cities.map((c) => (
-              <SelectItem key={c} value={c}>{c}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+      <Select value={country} onValueChange={setCountry}>
+        <SelectTrigger className="rounded-xl border-border/50 bg-muted/50 font-mono text-xs">
+          <SelectValue placeholder="Country (auto-detected)" />
+        </SelectTrigger>
+        <SelectContent>
+          {COUNTRIES.map((c) => (
+            <SelectItem key={c} value={c}>{c}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
 
       <Input
         placeholder="X handle (private)"
@@ -149,7 +152,7 @@ const CreateTapestryProfile = ({ walletAddress, onCreated }: CreateTapestryProfi
       </Button>
 
       <p className="text-center font-mono text-[9px] text-muted-foreground">
-        Only your nickname & city are visible. Socials revealed after mutual vibe ✨
+        Your nickname is permanent. Only nickname & country are visible. Socials revealed after mutual vibe ✨
       </p>
     </motion.div>
   );

@@ -205,7 +205,7 @@ const VibeMatch = () => {
         <div className="absolute -top-40 left-1/2 h-[600px] w-[600px] -translate-x-1/2 rounded-full bg-primary/5 blur-[150px]" />
       </div>
 
-      <div className="relative z-10 flex w-full max-w-lg flex-1 flex-col items-center justify-center gap-6 px-6 py-10">
+      <div className="relative z-10 flex w-full max-w-lg lg:max-w-2xl flex-1 flex-col items-center justify-center gap-6 px-6 py-10">
         <AnimatePresence mode="wait">
           {/* SEARCHING */}
           {phase === "searching" && !error && (
@@ -236,7 +236,7 @@ const VibeMatch = () => {
                 </p>
               </div>
               <GameTimer duration={60} speed={1000} onTick={setTimeLeft} onComplete={handleTimerComplete} />
-              <div className="h-[350px]">
+              <div className="h-[350px] lg:h-[500px]">
                 <ChatZone
                   timeLeft={0}
                   messages={messages}

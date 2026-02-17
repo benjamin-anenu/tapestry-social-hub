@@ -34,7 +34,7 @@ const ChatZone = ({ timeLeft, messages, clueDrops, onSendMessage, disabled, isTy
   const allItems: Array<{ type: "msg" | "clue"; time: number; data: any }> = [
     ...visibleMessages.map((m) => ({ type: "msg" as const, time: m.time, data: m })),
     ...visibleClues.map((c) => ({ type: "clue" as const, time: c.time, data: c })),
-  ].sort((a, b) => b.time - a.time);
+  ].sort((a, b) => a.time - b.time);
 
   useEffect(() => {
     if (scrollRef.current) {

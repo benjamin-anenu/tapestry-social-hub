@@ -46,7 +46,7 @@ const Play = () => {
         <div className="absolute -top-40 left-1/2 h-[600px] w-[600px] -translate-x-1/2 rounded-full bg-primary/5 blur-[150px]" />
       </div>
 
-      <div className="relative z-10 flex w-full max-w-lg flex-1 flex-col items-center justify-center gap-8 px-6 py-16">
+      <div className="relative z-10 flex w-full max-w-lg lg:max-w-2xl flex-1 flex-col items-center justify-center gap-8 px-6 py-16">
         <AnimatePresence mode="wait">
           {/* Phase 1: Connect Wallet */}
           {phase === "connect" && (

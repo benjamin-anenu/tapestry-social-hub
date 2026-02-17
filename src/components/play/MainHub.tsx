@@ -33,7 +33,7 @@ const MainHub = () => {
   const navigate = useNavigate();
 
   return (
-    <div className="flex w-full max-w-md flex-col gap-4">
+    <div className="flex w-full max-w-md lg:max-w-lg flex-col gap-4">
       {hubCards.map((card, i) => (
         <motion.button
           key={card.path}
