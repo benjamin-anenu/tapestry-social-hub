@@ -20,7 +20,20 @@ serve(async (req) => {
       throw new Error("TAPESTRY_API_KEY is not configured");
     }
 
-    const { walletAddress, username, bio } = await req.json();
+    const { walletAddress, username, bio, checkUsername } = await req.json();
+
+    // === CHECK USERNAME AVAILABILITY MODE ===
+    if (checkUsername) {
+      const checkRes = await fetch(
+        `${TAPESTRY_API}/profiles/${encodeURIComponent(checkUsername)}?apiKey=${TAPESTRY_API_KEY}&namespace=${NAMESPACE}`
+      );
+      const available = !checkRes.ok || checkRes.status === 404;
+      return new Response(JSON.stringify({ username: checkUsername, available: checkRes.status === 404 }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     if (!walletAddress) {
       return new Response(JSON.stringify({ error: "walletAddress is required" }), {
         status: 400,

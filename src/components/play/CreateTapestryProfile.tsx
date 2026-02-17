@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
-import { User, Loader2 } from "lucide-react";
+import { User, Loader2, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -22,6 +22,10 @@ const CreateTapestryProfile = ({ walletAddress, onCreated }: CreateTapestryProfi
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Nickname availability state
+  const [nicknameStatus, setNicknameStatus] = useState<"idle" | "checking" | "available" | "taken">("idle");
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Auto-detect country via IP on mount
   useEffect(() => {
     const detectCountry = async () => {
@@ -29,18 +33,46 @@ const CreateTapestryProfile = ({ walletAddress, onCreated }: CreateTapestryProfi
         const res = await fetch("https://ipapi.co/json/");
         const data = await res.json();
         if (data?.country_name) {
-          // Match against our list
           const match = COUNTRIES.find(
             (c) => c.toLowerCase() === data.country_name.toLowerCase()
           );
           if (match) setCountry(match);
         }
       } catch {
-        // Silently fail — user can still pick manually
+        // Silently fail
       }
     };
     detectCountry();
   }, []);
+
+  // Debounced nickname availability check
+  useEffect(() => {
+    const trimmed = nickname.trim();
+    if (trimmed.length < 3) {
+      setNicknameStatus("idle");
+      return;
+    }
+
+    setNicknameStatus("checking");
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const { data, error: fnError } = await supabase.functions.invoke(
+          "tapestry-identity",
+          { body: { checkUsername: trimmed } }
+        );
+        if (fnError) throw fnError;
+        setNicknameStatus(data?.available ? "available" : "taken");
+      } catch {
+        setNicknameStatus("idle"); // fail silently, creation will catch it
+      }
+    }, 500);
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [nickname]);
 
   const handleCreate = async () => {
     if (!nickname.trim()) return;
@@ -48,18 +80,24 @@ const CreateTapestryProfile = ({ walletAddress, onCreated }: CreateTapestryProfi
     setError(null);
 
     try {
-      // 1. Create Tapestry profile with nickname
       const { data, error: fnError } = await supabase.functions.invoke(
         "tapestry-identity",
         { body: { walletAddress, username: nickname.trim(), bio: bio.trim() || undefined } }
       );
-      if (fnError) throw fnError;
+
+      if (fnError) {
+        // Extract message from edge function error response
+        const errBody = typeof fnError === "object" && fnError !== null
+          ? (fnError as any).message || JSON.stringify(fnError)
+          : String(fnError);
+        throw new Error(errBody);
+      }
       if (data?.error) throw new Error(data.error);
 
-      // Pass profile data back before updating local profile
+      // Pass profile data back
       onCreated(data);
 
-      // 2. Update local profile with extended fields
+      // Update local profile with extended fields
       const { error: updateError } = await supabase
         .from("profiles")
         .update({
@@ -79,6 +117,20 @@ const CreateTapestryProfile = ({ walletAddress, onCreated }: CreateTapestryProfi
     }
   };
 
+  const nicknameIndicator = () => {
+    if (nickname.trim().length < 3) return null;
+    switch (nicknameStatus) {
+      case "checking":
+        return <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />;
+      case "available":
+        return <Check className="h-4 w-4 text-green-500" />;
+      case "taken":
+        return <X className="h-4 w-4 text-destructive" />;
+      default:
+        return null;
+    }
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -95,12 +147,28 @@ const CreateTapestryProfile = ({ walletAddress, onCreated }: CreateTapestryProfi
         </div>
       </div>
 
-      <Input
-        placeholder="Nickname (public, permanent) *"
-        value={nickname}
-        onChange={(e) => setNickname(e.target.value)}
-        className="rounded-xl border-border/50 bg-muted/50 font-mono"
-      />
+      <div className="relative">
+        <Input
+          placeholder="Nickname (public, permanent) *"
+          value={nickname}
+          onChange={(e) => setNickname(e.target.value)}
+          className="rounded-xl border-border/50 bg-muted/50 font-mono pr-10"
+        />
+        <div className="absolute right-3 top-1/2 -translate-y-1/2">
+          {nicknameIndicator()}
+        </div>
+      </div>
+      {nicknameStatus === "taken" && (
+        <p className="font-mono text-[10px] text-destructive -mt-2">
+          This nickname is already taken. Try another one.
+        </p>
+      )}
+      {nicknameStatus === "available" && (
+        <p className="font-mono text-[10px] text-green-500 -mt-2">
+          Nickname is available! ✓
+        </p>
+      )}
+
       <Input
         placeholder="Real name (private, revealed on match)"
         value={realName}
@@ -144,7 +212,7 @@ const CreateTapestryProfile = ({ walletAddress, onCreated }: CreateTapestryProfi
 
       <Button
         onClick={handleCreate}
-        disabled={!nickname.trim() || isCreating}
+        disabled={!nickname.trim() || isCreating || nicknameStatus === "taken" || nicknameStatus === "checking"}
         className="h-12 rounded-xl font-display font-bold"
         style={{ backgroundImage: "var(--gradient-primary)" }}
       >
