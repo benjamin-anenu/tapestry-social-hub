@@ -1,64 +1,48 @@
 
 
-## Fix: Separate Profile Lookup from Creation
+## Fix: Tapestry Profile Lookup and Creation Flow
 
-### Root Cause
+### Problems Identified
 
-The `tapestry-identity` edge function uses Tapestry's `findOrCreate` endpoint for EVERY call -- including the initial identity check when a wallet connects. This means the first time a new wallet connects, it immediately auto-creates a profile with a generic username like `find60_abcd1234`, and the `CreateTapestryProfile` form is never shown because `hasProfile` evaluates to `true`.
+1. **Search endpoint 404**: The `/v1/profiles/search` endpoint is returning 404. The Tapestry docs show both `/v1/` and `/api/v1/` base URLs -- the search endpoint likely needs to use `/api/v1/` like the other endpoints.
 
-### About Clearing Data
+2. **Namespace mismatch**: The wallet's Tapestry profile exists under the `"find"` namespace, but the lookup code filters for `"find60"`. This means even a working search would never match the profile.
 
-- **Local database**: We can delete all non-bot profiles from the `profiles` table. This is safe and reversible.
-- **Tapestry**: Profiles created on Tapestry are permanent. They cannot be deleted. However, the fix below ensures Tapestry profiles are only created when the user explicitly submits the form with their chosen nickname -- so clearing local data + deploying the fix will give you a clean slate for new wallets.
-- **Existing generic profiles**: Wallets that already have a `find60_XXXXX` profile on Tapestry will still show as "having a profile." For a true fresh start, use a different wallet.
+3. **Post-creation refresh fails**: After creating a profile, the refresh hook calls lookup mode, which fails due to issues 1 and 2 above, causing the Create Identity form to reappear in a loop.
 
-### The Fix (2 parts)
+### Fix Plan
 
-#### Part 1: Split the edge function into lookup vs. create modes
+#### Part 1: Fix the search endpoint URL
 
 **File: `supabase/functions/tapestry-identity/index.ts`**
 
-Add a `mode` parameter to the request body:
-- `mode: "lookup"` (default when no username provided) -- Uses Tapestry's `profiles/search` endpoint to check if a profile exists for this wallet, without creating one. Returns the profile if found, or `{ profile: null }` if not.
-- `mode: "create"` (when username is provided) -- Uses the existing `findOrCreate` endpoint to create the profile with the user's chosen nickname.
+Remove the separate `TAPESTRY_V1` constant. Use a single base URL (`https://api.usetapestry.dev/api/v1`) for ALL Tapestry API calls, including search. The search endpoint should be at `api/v1/profiles/search`, matching the other working endpoints.
 
-```
-// Pseudocode for the new logic:
-if (username) {
-  // CREATE mode: use findOrCreate as before
-} else {
-  // LOOKUP mode: use profiles/search to find existing profile
-  // If no profile found in find60 namespace, return { profile: null }
-}
-```
+#### Part 2: Fix namespace filtering
 
-#### Part 2: Update the frontend check
+**File: `supabase/functions/tapestry-identity/index.ts`**
+
+- Change the `findOrCreate` namespace from `find60` to `find` (or whichever namespace your app actually uses)
+- Change the lookup filter from `p.namespace === "find60"` to `p.namespace === "find"`
+- Update follower/following endpoints to use `namespace=find`
+
+#### Part 3: Improve post-creation flow
 
 **File: `src/pages/Play.tsx`**
 
-Update the `hasProfile` check. Currently it checks `activeProfile?.profile?.username || activeProfile?.username`. After the fix, when no Tapestry profile exists, the edge function returns `{ profile: null }`, so `hasProfile` will correctly be `false` and the `CreateTapestryProfile` form will be shown.
+Instead of relying on a second lookup call after creation, pass the create response directly as the active profile. The create call already returns the full profile data -- no need for a separate refresh that can fail.
 
-No changes needed to `CreateTapestryProfile.tsx` -- it already passes `username` when calling `tapestry-identity`, which will trigger create mode.
+### Technical Details
 
-#### Part 3: Clear existing test profiles
-
-Run a SQL query to delete all non-bot profiles from the database so you can test fresh:
-
-```sql
-DELETE FROM profiles WHERE is_bot = false;
-```
-
-### Files to Modify
-
-| File | Change |
+| File | Changes |
 |---|---|
-| `supabase/functions/tapestry-identity/index.ts` | Split into lookup (search) vs. create (findOrCreate) modes based on whether `username` is provided |
-| `src/pages/Play.tsx` | Minor adjustment to `hasProfile` check to handle `{ profile: null }` response |
+| `supabase/functions/tapestry-identity/index.ts` | Use single `TAPESTRY_API` base URL for all calls; fix namespace from `find60` to `find` |
+| `src/pages/Play.tsx` | Store create response directly as profile instead of triggering a refresh lookup |
+| `src/components/play/CreateTapestryProfile.tsx` | Pass created profile data back via `onCreated` callback |
 
 ### What This Achieves
 
-1. New wallet connects -- edge function does a search-only lookup -- no Tapestry profile found -- `CreateTapestryProfile` form is shown
-2. User fills in nickname, real name, socials -- submits -- edge function creates profile on Tapestry with chosen nickname
-3. Existing wallets with Tapestry profiles -- search finds them -- `IdentityCard` is shown as before
-4. Cross-app reputation data still fetched in both modes
+- Wallet connects -> search finds existing "Sensei" profile -> IdentityCard shown
+- New wallet -> search returns empty -> Create Identity form shown
+- User creates profile -> response stored directly -> IdentityCard shown immediately (no fragile refresh)
 
