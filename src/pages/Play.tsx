@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { useTapestryIdentity } from "@/hooks/useTapestryIdentity";
 import IdentityCard from "@/components/play/IdentityCard";
 import CreateTapestryProfile from "@/components/play/CreateTapestryProfile";
-import PlayLobby from "@/components/play/PlayLobby";
+import MainHub from "@/components/play/MainHub";
 
 type Phase = "connect" | "identity" | "lobby";
 
@@ -110,7 +110,7 @@ const Play = () => {
             </motion.div>
           )}
 
-          {/* Phase 3: Lobby */}
+          {/* Phase 3: Hub */}
           {phase === "lobby" && activeProfile && (
             <motion.div
               key="lobby"
@@ -120,13 +120,9 @@ const Play = () => {
               className="flex flex-col items-center gap-6"
             >
               <h2 className="font-display text-3xl font-bold text-foreground">
-                Choose Your <span className="text-primary text-glow-blue">Role</span>
+                Your <span className="text-primary text-glow-blue">Hub</span>
               </h2>
-              <PlayLobby
-                profile={activeProfile}
-                profileId={(activeProfile.profile?.id as string) ?? ""}
-                walletAddress={walletAddress!}
-              />
+              <MainHub />
             </motion.div>
           )}
         </AnimatePresence>
