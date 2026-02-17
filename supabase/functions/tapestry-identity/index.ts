@@ -27,63 +27,38 @@ serve(async (req) => {
       });
     }
 
-    // findOrCreate profile on Tapestry
-    const defaultUsername = `find60_${walletAddress.slice(0, 8).toLowerCase()}`;
-    const body: Record<string, string> = {
-      walletAddress,
-      username: username || defaultUsername,
-      blockchain: "SOLANA",
-      execution: "FAST_UNCONFIRMED",
-    };
-    if (bio) body.bio = bio;
-
-    const profileRes = await fetch(
-      `${TAPESTRY_BASE}/profiles/findOrCreate?apiKey=${TAPESTRY_API_KEY}&namespace=find60`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      }
-    );
-
-    if (!profileRes.ok) {
-      const errText = await profileRes.text();
-      throw new Error(`Tapestry API error [${profileRes.status}]: ${errText}`);
-    }
-
-    const profile = await profileRes.json();
-
-    // Try to fetch follower/following counts for reputation
+    let profile: Record<string, unknown> | null = null;
     let followers = 0;
     let following = 0;
-    try {
-      const profileId = profile.profile?.username || username;
-      const followersRes = await fetch(
-        `${TAPESTRY_BASE}/profiles/${profileId}/followers?apiKey=${TAPESTRY_API_KEY}&namespace=find60`
-      );
-      if (followersRes.ok) {
-        const data = await followersRes.json();
-        followers = data?.followers?.length ?? 0;
-      } else {
-        await followersRes.text();
-      }
-
-      const followingRes = await fetch(
-        `${TAPESTRY_BASE}/profiles/${profileId}/following?apiKey=${TAPESTRY_API_KEY}&namespace=find60`
-      );
-      if (followingRes.ok) {
-        const data = await followingRes.json();
-        following = data?.following?.length ?? 0;
-      } else {
-        await followingRes.text();
-      }
-    } catch {
-      // non-critical
-    }
-
-    // Fetch cross-app profiles
     let crossAppProfiles: Array<{ namespace: string; username?: string; followers: number; following: number }> = [];
-    try {
+
+    if (username) {
+      // === CREATE MODE: use findOrCreate with user's chosen nickname ===
+      const body: Record<string, string> = {
+        walletAddress,
+        username,
+        blockchain: "SOLANA",
+        execution: "FAST_UNCONFIRMED",
+      };
+      if (bio) body.bio = bio;
+
+      const profileRes = await fetch(
+        `${TAPESTRY_BASE}/profiles/findOrCreate?apiKey=${TAPESTRY_API_KEY}&namespace=find60`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }
+      );
+
+      if (!profileRes.ok) {
+        const errText = await profileRes.text();
+        throw new Error(`Tapestry API error [${profileRes.status}]: ${errText}`);
+      }
+
+      profile = await profileRes.json();
+    } else {
+      // === LOOKUP MODE: search for existing profile without creating one ===
       const searchRes = await fetch(
         `${TAPESTRY_BASE}/profiles/search?apiKey=${TAPESTRY_API_KEY}&shouldIncludeExternalProfiles=true`,
         {
@@ -92,24 +67,98 @@ serve(async (req) => {
           body: JSON.stringify({ walletAddress }),
         }
       );
+
       if (searchRes.ok) {
         const searchData = await searchRes.json();
-        crossAppProfiles = (searchData.profiles || []).map((p: any) => ({
+        const allProfiles = searchData.profiles || [];
+
+        // Find the find60 namespace profile
+        const find60Profile = allProfiles.find((p: any) => p.namespace === "find60");
+
+        if (find60Profile) {
+          profile = {
+            profile: {
+              username: find60Profile.username,
+              bio: find60Profile.bio,
+              image: find60Profile.image,
+            },
+            username: find60Profile.username,
+          };
+        }
+
+        // Map cross-app profiles
+        crossAppProfiles = allProfiles.map((p: any) => ({
           namespace: p.namespace || "Unknown",
           username: p.username,
           followers: p.socialCounts?.followers ?? 0,
           following: p.socialCounts?.following ?? 0,
         }));
       } else {
-        await searchRes.text();
+        const errText = await searchRes.text();
+        console.warn("Tapestry search failed:", searchRes.status, errText);
       }
-    } catch {
-      // non-critical
     }
 
+    // If we have a profile, fetch follower/following counts
+    const profileUsername = (profile as any)?.profile?.username || (profile as any)?.username;
+    if (profileUsername) {
+      try {
+        const followersRes = await fetch(
+          `${TAPESTRY_BASE}/profiles/${profileUsername}/followers?apiKey=${TAPESTRY_API_KEY}&namespace=find60`
+        );
+        if (followersRes.ok) {
+          const data = await followersRes.json();
+          followers = data?.followers?.length ?? 0;
+        } else {
+          await followersRes.text();
+        }
+
+        const followingRes = await fetch(
+          `${TAPESTRY_BASE}/profiles/${profileUsername}/following?apiKey=${TAPESTRY_API_KEY}&namespace=find60`
+        );
+        if (followingRes.ok) {
+          const data = await followingRes.json();
+          following = data?.following?.length ?? 0;
+        } else {
+          await followingRes.text();
+        }
+      } catch {
+        // non-critical
+      }
+
+      // If create mode, also fetch cross-app profiles
+      if (username && crossAppProfiles.length === 0) {
+        try {
+          const searchRes = await fetch(
+            `${TAPESTRY_BASE}/profiles/search?apiKey=${TAPESTRY_API_KEY}&shouldIncludeExternalProfiles=true`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ walletAddress }),
+            }
+          );
+          if (searchRes.ok) {
+            const searchData = await searchRes.json();
+            crossAppProfiles = (searchData.profiles || []).map((p: any) => ({
+              namespace: p.namespace || "Unknown",
+              username: p.username,
+              followers: p.socialCounts?.followers ?? 0,
+              following: p.socialCounts?.following ?? 0,
+            }));
+          } else {
+            await searchRes.text();
+          }
+        } catch {
+          // non-critical
+        }
+      }
+    }
+
+    // Return profile (or null if not found in lookup mode)
     return new Response(
       JSON.stringify({
-        ...profile,
+        ...(profile || {}),
+        profile: profile ? (profile as any).profile || profile : null,
         social: { followers, following },
         crossAppProfiles,
       }),
