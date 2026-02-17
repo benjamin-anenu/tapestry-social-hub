@@ -25,7 +25,7 @@ serve(async (req) => {
     // === CHECK USERNAME AVAILABILITY MODE ===
     if (checkUsername) {
       const checkRes = await fetch(
-        `${TAPESTRY_API}/profiles/${encodeURIComponent(checkUsername)}?apiKey=${TAPESTRY_API_KEY}&namespace=${NAMESPACE}`
+        `${TAPESTRY_API}/profiles/${encodeURIComponent(checkUsername)}?apiKey=${TAPESTRY_API_KEY}`
       );
       let available = false;
       if (checkRes.status === 404) {
@@ -92,7 +92,7 @@ serve(async (req) => {
     } else {
       // === LOOKUP MODE: search for existing profile without creating one ===
       const searchRes = await fetch(
-        `${TAPESTRY_API}/profiles/search?apiKey=${TAPESTRY_API_KEY}&shouldIncludeExternalProfiles=true`,
+        `https://api.usetapestry.dev/v1/profiles/search?apiKey=${TAPESTRY_API_KEY}&shouldIncludeExternalProfiles=true`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -136,7 +136,7 @@ serve(async (req) => {
     if (profileUsername) {
       try {
         const followersRes = await fetch(
-          `${TAPESTRY_API}/profiles/${profileUsername}/followers?apiKey=${TAPESTRY_API_KEY}&namespace=${NAMESPACE}`
+          `${TAPESTRY_API}/profiles/${profileUsername}/followers?apiKey=${TAPESTRY_API_KEY}`
         );
         if (followersRes.ok) {
           const data = await followersRes.json();
@@ -146,7 +146,7 @@ serve(async (req) => {
         }
 
         const followingRes = await fetch(
-          `${TAPESTRY_API}/profiles/${profileUsername}/following?apiKey=${TAPESTRY_API_KEY}&namespace=${NAMESPACE}`
+          `${TAPESTRY_API}/profiles/${profileUsername}/following?apiKey=${TAPESTRY_API_KEY}`
         );
         if (followingRes.ok) {
           const data = await followingRes.json();
@@ -162,7 +162,7 @@ serve(async (req) => {
       if (username && crossAppProfiles.length === 0) {
         try {
           const searchRes = await fetch(
-            `${TAPESTRY_API}/profiles/search?apiKey=${TAPESTRY_API_KEY}&shouldIncludeExternalProfiles=true`,
+            `https://api.usetapestry.dev/v1/profiles/search?apiKey=${TAPESTRY_API_KEY}&shouldIncludeExternalProfiles=true`,
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },
