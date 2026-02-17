@@ -6,8 +6,21 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const TAPESTRY_API = "https://api.usetapestry.dev/api/v1";
+const TAPESTRY_BASE = "https://api.usetapestry.dev/v1";
 const NAMESPACE = "find";
+
+// Helper: wallet-based profile search via POST
+async function searchProfilesByWallet(apiKey: string, walletAddress: string) {
+  const res = await fetch(
+    `${TAPESTRY_BASE}/profiles/search?apiKey=${apiKey}&shouldIncludeExternalProfiles=true`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ walletAddress, limit: 50, offset: 0 }),
+    }
+  );
+  return res;
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -25,16 +38,14 @@ serve(async (req) => {
     // === CHECK USERNAME AVAILABILITY MODE ===
     if (checkUsername) {
       const checkRes = await fetch(
-        `${TAPESTRY_API}/profiles/${encodeURIComponent(checkUsername)}?apiKey=${TAPESTRY_API_KEY}`
+        `${TAPESTRY_BASE}/profiles/${encodeURIComponent(checkUsername)}?apiKey=${TAPESTRY_API_KEY}`
       );
       let available = false;
       if (checkRes.status === 404) {
         available = true;
       } else if (checkRes.ok) {
-        // Profile exists — not available
         available = false;
       } else {
-        // Unexpected error — treat as unavailable to be safe
         const errText = await checkRes.text();
         console.warn("Username check unexpected response:", checkRes.status, errText);
         available = false;
@@ -58,7 +69,7 @@ serve(async (req) => {
     let crossAppProfiles: Array<{ namespace: string; username?: string; followers: number; following: number }> = [];
 
     if (username) {
-      // === CREATE MODE: use findOrCreate with user's chosen nickname ===
+      // === CREATE MODE ===
       const body: Record<string, string> = {
         walletAddress,
         username,
@@ -68,7 +79,7 @@ serve(async (req) => {
       if (bio) body.bio = bio;
 
       const profileRes = await fetch(
-        `${TAPESTRY_API}/profiles/findOrCreate?apiKey=${TAPESTRY_API_KEY}&namespace=${NAMESPACE}`,
+        `${TAPESTRY_BASE}/profiles/findOrCreate?apiKey=${TAPESTRY_API_KEY}&namespace=${NAMESPACE}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -78,12 +89,9 @@ serve(async (req) => {
 
       if (!profileRes.ok) {
         const errText = await profileRes.text();
-        // If "already exists", try to recover by looking up the existing profile
         if (profileRes.status === 400 && errText.includes("already exists")) {
           console.log("Username already exists, attempting wallet lookup recovery...");
-          const recoveryRes = await fetch(
-            `${TAPESTRY_API}/search/profiles?apiKey=${TAPESTRY_API_KEY}&walletAddress=${encodeURIComponent(walletAddress)}&shouldIncludeExternalProfiles=true`
-          );
+          const recoveryRes = await searchProfilesByWallet(TAPESTRY_API_KEY, walletAddress);
           if (recoveryRes.ok) {
             const recoveryData = await recoveryRes.json();
             const allProfiles = recoveryData.profiles || [];
@@ -105,7 +113,6 @@ serve(async (req) => {
               }));
             }
           }
-          // If recovery failed or no profile found, surface the error
           if (!profile) {
             return new Response(JSON.stringify({ error: "That nickname is already taken. Please choose a different one." }), {
               status: 400,
@@ -119,16 +126,12 @@ serve(async (req) => {
         profile = await profileRes.json();
       }
     } else {
-      // === LOOKUP MODE: search for existing profile without creating one ===
-      const searchRes = await fetch(
-        `${TAPESTRY_API}/search/profiles?apiKey=${TAPESTRY_API_KEY}&walletAddress=${encodeURIComponent(walletAddress)}&shouldIncludeExternalProfiles=true`
-      );
+      // === LOOKUP MODE ===
+      const searchRes = await searchProfilesByWallet(TAPESTRY_API_KEY, walletAddress);
 
       if (searchRes.ok) {
         const searchData = await searchRes.json();
         const allProfiles = searchData.profiles || [];
-
-        // Find the namespace profile
         const findProfile = allProfiles.find((p: any) => p.namespace === NAMESPACE);
 
         if (findProfile) {
@@ -142,7 +145,6 @@ serve(async (req) => {
           };
         }
 
-        // Map cross-app profiles
         crossAppProfiles = allProfiles.map((p: any) => ({
           namespace: p.namespace || "Unknown",
           username: p.username,
@@ -155,26 +157,26 @@ serve(async (req) => {
       }
     }
 
-    // If we have a profile, fetch follower/following counts
+    // Fetch follower/following counts
     const profileUsername = (profile as any)?.profile?.username || (profile as any)?.username;
     if (profileUsername) {
       try {
         const followersRes = await fetch(
-          `${TAPESTRY_API}/profiles/${profileUsername}/followers?apiKey=${TAPESTRY_API_KEY}`
+          `${TAPESTRY_BASE}/profiles/followers/${profileUsername}/count?apiKey=${TAPESTRY_API_KEY}`
         );
         if (followersRes.ok) {
           const data = await followersRes.json();
-          followers = data?.followers?.length ?? 0;
+          followers = data?.count ?? 0;
         } else {
           await followersRes.text();
         }
 
         const followingRes = await fetch(
-          `${TAPESTRY_API}/profiles/${profileUsername}/following?apiKey=${TAPESTRY_API_KEY}`
+          `${TAPESTRY_BASE}/profiles/following/${profileUsername}/count?apiKey=${TAPESTRY_API_KEY}`
         );
         if (followingRes.ok) {
           const data = await followingRes.json();
-          following = data?.following?.length ?? 0;
+          following = data?.count ?? 0;
         } else {
           await followingRes.text();
         }
@@ -185,9 +187,7 @@ serve(async (req) => {
       // If create mode, also fetch cross-app profiles
       if (username && crossAppProfiles.length === 0) {
         try {
-          const searchRes = await fetch(
-            `${TAPESTRY_API}/search/profiles?apiKey=${TAPESTRY_API_KEY}&walletAddress=${encodeURIComponent(walletAddress)}&shouldIncludeExternalProfiles=true`
-          );
+          const searchRes = await searchProfilesByWallet(TAPESTRY_API_KEY, walletAddress);
           if (searchRes.ok) {
             const searchData = await searchRes.json();
             crossAppProfiles = (searchData.profiles || []).map((p: any) => ({
@@ -205,7 +205,6 @@ serve(async (req) => {
       }
     }
 
-    // Return profile (or null if not found in lookup mode)
     return new Response(
       JSON.stringify({
         ...(profile || {}),
