@@ -1,85 +1,96 @@
 
 
-## Fix 4 Issues: Matching, Chat Sort, Desktop Size + Profile Flow
+## Fetch Real Cross-App Reputation from Tapestry
 
-### 1. New Users Can't Match ("Profile not found")
+### Problem
+The demo shows "CROSS-APP REPUTATION" with per-app scores, but the actual `tapestry-identity` edge function only fetches follower/following counts from the `find60` namespace. Tapestry's API supports querying all profiles linked to a wallet across namespaces, which would give real cross-app data.
 
-**Problem**: `vibe-match` throws "Profile not found" if no `profiles` row exists for the wallet.
+### Solution
+Update the `tapestry-identity` edge function to call Tapestry's `searchProfiles` endpoint with `shouldIncludeExternalProfiles=true`, then return cross-app profile data to the frontend. Update the real Play flow's IdentityCard to display this data.
 
-**Fix** in `supabase/functions/vibe-match/index.ts`: Replace the `throw` on line 36 with auto-creation of a minimal profile row, then prompt user to complete their profile after the session.
+### Technical Changes
+
+**1. `supabase/functions/tapestry-identity/index.ts`**
+
+After the existing `findOrCreate` call, add a second fetch to get all profiles for the wallet:
 
 ```ts
-// Instead of: if (!myProfile) throw new Error("Profile not found");
-let myProfile = profileData;
-if (!myProfile) {
-  const { data: newProfile } = await supabase
-    .from("profiles")
-    .insert({
-      wallet_address: walletAddress,
-      user_id: crypto.randomUUID(),
-      username: walletAddress.slice(0, 8),
-      is_online: true,
-      last_seen: new Date().toISOString(),
-    })
-    .select("id, city, country, username")
-    .single();
-  if (!newProfile) throw new Error("Could not create profile");
-  myProfile = newProfile;
+// Fetch cross-app profiles
+let crossAppProfiles: Array<{ namespace: string; followers: number; following: number }> = [];
+try {
+  const searchRes = await fetch(
+    `${TAPESTRY_BASE}/profiles/search?apiKey=${TAPESTRY_API_KEY}&shouldIncludeExternalProfiles=true`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ walletAddress }),
+    }
+  );
+  if (searchRes.ok) {
+    const searchData = await searchRes.json();
+    // Map each profile to { namespace, followers, following }
+    crossAppProfiles = (searchData.profiles || []).map((p: any) => ({
+      namespace: p.namespace || "Unknown",
+      username: p.username,
+      followers: p.socialCounts?.followers ?? 0,
+      following: p.socialCounts?.following ?? 0,
+    }));
+  }
+} catch {
+  // non-critical
 }
 ```
 
-Also remove the city-based matching branches (lines 53-72) and simplify to:
-- If user has `country`, try country match first
-- Fallback to global
-- Then bot fallback
+Return it alongside existing data:
+```ts
+return new Response(
+  JSON.stringify({
+    ...profile,
+    social: { followers, following },
+    crossAppProfiles,
+  }),
+  ...
+);
+```
 
-### 2. Chat Messages Sort (Upward Instead of Downward)
+**2. `src/hooks/useTapestryIdentity.ts`**
 
-**Problem**: `ChatZone.tsx` line 37 sorts `b.time - a.time` (descending = newest at top).
+Add `crossAppProfiles` to the `TapestryProfile` interface:
 
-**Fix**: Change to `a.time - b.time` (ascending = newest at bottom, standard chat order).
+```ts
+export interface TapestryProfile {
+  // ...existing fields
+  crossAppProfiles?: Array<{
+    namespace: string;
+    username?: string;
+    followers: number;
+    following: number;
+  }>;
+}
+```
 
-### 3. Desktop View Too Compact
+**3. `src/components/play/IdentityCard.tsx`**
 
-**Fix** -- apply responsive Tailwind classes:
+Display cross-app profiles below followers/following if they exist:
 
-| File | Change |
-|---|---|
-| `src/pages/VibeMatch.tsx` line 208 | `max-w-lg` to `max-w-lg lg:max-w-2xl` |
-| `src/pages/VibeMatch.tsx` line 239 | `h-[350px]` to `h-[350px] lg:h-[500px]` |
-| `src/pages/Play.tsx` line 50 | `max-w-lg` to `max-w-lg lg:max-w-2xl` |
-| `src/components/play/MainHub.tsx` line 36 | `max-w-md` to `max-w-md lg:max-w-lg` |
-| `src/components/play/IdentityCard.tsx` line 22 | `max-w-sm` to `max-w-sm lg:max-w-md` |
-| `src/components/play/CreateTapestryProfile.tsx` line 65 | `max-w-sm` to `max-w-sm lg:max-w-md` |
+- Show each namespace with its follower count as a simple reputation bar
+- Only show if `profile.crossAppProfiles` has entries
+- Keep the card clean: namespace name + follower count in a compact list
 
-### 4. Country: Auto-Detect + Remove City
+**4. No changes to `DemoWalletConnect.tsx`**
 
-**`src/components/play/CreateTapestryProfile.tsx`**:
-- Remove `city` state, city dropdown, and city in the `.update()` call
-- Add `useEffect` on mount to fetch country via `https://ipapi.co/json/` and pre-fill the country dropdown
-- User can still manually change country from dropdown
-
-**`src/lib/locations.ts`**:
-- Remove `CITIES` export (no longer needed)
-
-**`src/components/play/IdentityCard.tsx`**:
-- Change line 15 from showing `city` to showing `country` from profile data
-
-**`supabase/functions/vibe-match/index.ts`**:
-- Remove all city-based matching logic; keep country-first then global fallback
-
----
+The demo keeps its mock data as-is since it's a demo/walkthrough. The real flow on `/play` will now show actual cross-app data.
 
 ### Files to Modify
 
-| File | Changes |
+| File | Change |
 |---|---|
-| `supabase/functions/vibe-match/index.ts` | Auto-create profile; remove city matching; simplify to country then global |
-| `src/components/demo/ChatZone.tsx` | Fix sort order to ascending |
-| `src/pages/VibeMatch.tsx` | Responsive container and chat height |
-| `src/pages/Play.tsx` | Responsive container |
-| `src/components/play/CreateTapestryProfile.tsx` | Remove city; add country auto-detect via IP; responsive sizing |
-| `src/components/play/IdentityCard.tsx` | Show country instead of city; responsive sizing |
-| `src/components/play/MainHub.tsx` | Responsive card sizing |
-| `src/lib/locations.ts` | Remove CITIES export |
+| `supabase/functions/tapestry-identity/index.ts` | Add `searchProfiles` call with `shouldIncludeExternalProfiles=true`; return `crossAppProfiles` array |
+| `src/hooks/useTapestryIdentity.ts` | Add `crossAppProfiles` to `TapestryProfile` interface |
+| `src/components/play/IdentityCard.tsx` | Display cross-app reputation bars when data is available |
+
+### Notes
+- The Tapestry `searchProfiles` endpoint may return the Find60 profile too, so we can either include or filter it out
+- If a user has no cross-app profiles, the section simply won't render (graceful fallback)
+- This is a read-only query, no new permissions or RLS changes needed
 
