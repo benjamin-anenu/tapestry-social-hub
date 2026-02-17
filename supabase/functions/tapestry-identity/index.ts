@@ -54,6 +54,13 @@ serve(async (req) => {
 
       if (!profileRes.ok) {
         const errText = await profileRes.text();
+        // Surface "already exists" as a 400, not 500
+        if (profileRes.status === 400 && errText.includes("already exists")) {
+          return new Response(JSON.stringify({ error: "That nickname is already taken. Please choose a different one." }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
         throw new Error(`Tapestry API error [${profileRes.status}]: ${errText}`);
       }
 
