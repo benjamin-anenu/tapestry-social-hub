@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Users, Star } from "lucide-react";
+import { Users, Star, Globe } from "lucide-react";
 import type { TapestryProfile } from "@/hooks/useTapestryIdentity";
 
 interface IdentityCardProps {
@@ -14,6 +14,8 @@ const IdentityCard = ({ profile, walletAddress }: IdentityCardProps) => {
   const following = profile.social?.following ?? 0;
   const country = (profile.profile?.country as string | undefined) ?? "";
   const shortWallet = `${walletAddress.slice(0, 4)}...${walletAddress.slice(-4)}`;
+  const crossApps = profile.crossAppProfiles?.filter(p => p.namespace !== "find60") ?? [];
+  const maxFollowers = Math.max(1, ...crossApps.map(p => p.followers));
 
   return (
     <motion.div
@@ -51,6 +53,29 @@ const IdentityCard = ({ profile, walletAddress }: IdentityCardProps) => {
           </span>
         </div>
       </div>
+
+      {crossApps.length > 0 && (
+        <div className="w-full border-t border-border/30 pt-3">
+          <div className="flex items-center gap-1.5 mb-2">
+            <Globe className="h-3.5 w-3.5 text-primary/70" />
+            <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Cross-App Reputation</span>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            {crossApps.map((app) => (
+              <div key={app.namespace} className="flex items-center gap-2">
+                <span className="font-mono text-xs text-foreground/80 w-24 truncate">{app.namespace}</span>
+                <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-primary/60"
+                    style={{ width: `${Math.max(5, (app.followers / maxFollowers) * 100)}%` }}
+                  />
+                </div>
+                <span className="font-mono text-[10px] text-muted-foreground w-8 text-right">{app.followers}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </motion.div>
   );
 };

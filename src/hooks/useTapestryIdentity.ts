@@ -9,6 +9,12 @@ export interface TapestryProfile {
   social?: { followers: number; following: number };
   profile?: Record<string, unknown>;
   created?: boolean;
+  crossAppProfiles?: Array<{
+    namespace: string;
+    username?: string;
+    followers: number;
+    following: number;
+  }>;
 }
 
 export const useTapestryIdentity = (walletAddress: string | null) => {

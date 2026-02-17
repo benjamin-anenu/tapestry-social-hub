@@ -81,10 +81,37 @@ serve(async (req) => {
       // non-critical
     }
 
+    // Fetch cross-app profiles
+    let crossAppProfiles: Array<{ namespace: string; username?: string; followers: number; following: number }> = [];
+    try {
+      const searchRes = await fetch(
+        `${TAPESTRY_BASE}/profiles/search?apiKey=${TAPESTRY_API_KEY}&shouldIncludeExternalProfiles=true`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ walletAddress }),
+        }
+      );
+      if (searchRes.ok) {
+        const searchData = await searchRes.json();
+        crossAppProfiles = (searchData.profiles || []).map((p: any) => ({
+          namespace: p.namespace || "Unknown",
+          username: p.username,
+          followers: p.socialCounts?.followers ?? 0,
+          following: p.socialCounts?.following ?? 0,
+        }));
+      } else {
+        await searchRes.text();
+      }
+    } catch {
+      // non-critical
+    }
+
     return new Response(
       JSON.stringify({
         ...profile,
         social: { followers, following },
+        crossAppProfiles,
       }),
       {
         status: 200,
