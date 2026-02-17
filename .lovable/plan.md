@@ -1,48 +1,36 @@
 
+## Fix Nickname Availability Check and Add Validation Rules
 
-## Fix: Tapestry Profile Lookup and Creation Flow
+### Root Cause
 
-### Problems Identified
+The Tapestry API base URL is wrong. The docs clearly show it should be `https://api.usetapestry.dev/v1` but the code uses `https://api.usetapestry.dev/api/v1`. This causes:
+- Username availability checks hit the wrong endpoint, returning unexpected responses (never 404), so every name appears "taken"
+- Profile search returns 404, breaking lookup mode
 
-1. **Search endpoint 404**: The `/v1/profiles/search` endpoint is returning 404. The Tapestry docs show both `/v1/` and `/api/v1/` base URLs -- the search endpoint likely needs to use `/api/v1/` like the other endpoints.
+### Changes
 
-2. **Namespace mismatch**: The wallet's Tapestry profile exists under the `"find"` namespace, but the lookup code filters for `"find60"`. This means even a working search would never match the profile.
-
-3. **Post-creation refresh fails**: After creating a profile, the refresh hook calls lookup mode, which fails due to issues 1 and 2 above, causing the Create Identity form to reappear in a loop.
-
-### Fix Plan
-
-#### Part 1: Fix the search endpoint URL
+#### 1. Fix Tapestry API base URL (edge function)
 
 **File: `supabase/functions/tapestry-identity/index.ts`**
 
-Remove the separate `TAPESTRY_V1` constant. Use a single base URL (`https://api.usetapestry.dev/api/v1`) for ALL Tapestry API calls, including search. The search endpoint should be at `api/v1/profiles/search`, matching the other working endpoints.
+Change `TAPESTRY_API` from `https://api.usetapestry.dev/api/v1` to `https://api.usetapestry.dev/v1`. This single fix applies to all endpoints: findOrCreate, search, profile lookup, followers, and following.
 
-#### Part 2: Fix namespace filtering
+Also improve the username availability check logic to handle edge cases by parsing the response body, not just relying on status codes.
 
-**File: `supabase/functions/tapestry-identity/index.ts`**
+#### 2. Add client-side nickname validation rules
 
-- Change the `findOrCreate` namespace from `find60` to `find` (or whichever namespace your app actually uses)
-- Change the lookup filter from `p.namespace === "find60"` to `p.namespace === "find"`
-- Update follower/following endpoints to use `namespace=find`
+**File: `src/components/play/CreateTapestryProfile.tsx`**
 
-#### Part 3: Improve post-creation flow
-
-**File: `src/pages/Play.tsx`**
-
-Instead of relying on a second lookup call after creation, pass the create response directly as the active profile. The create call already returns the full profile data -- no need for a separate refresh that can fail.
+Add input validation before the nickname is sent to the server:
+- Minimum 3 characters, maximum 20 characters
+- Alphanumeric and underscores only (no spaces or special characters)
+- Auto-strip invalid characters as the user types
+- Show inline validation messages explaining the rules
+- Skip the server availability check until the local format is valid
 
 ### Technical Details
 
-| File | Changes |
+| File | Change |
 |---|---|
-| `supabase/functions/tapestry-identity/index.ts` | Use single `TAPESTRY_API` base URL for all calls; fix namespace from `find60` to `find` |
-| `src/pages/Play.tsx` | Store create response directly as profile instead of triggering a refresh lookup |
-| `src/components/play/CreateTapestryProfile.tsx` | Pass created profile data back via `onCreated` callback |
-
-### What This Achieves
-
-- Wallet connects -> search finds existing "Sensei" profile -> IdentityCard shown
-- New wallet -> search returns empty -> Create Identity form shown
-- User creates profile -> response stored directly -> IdentityCard shown immediately (no fragile refresh)
-
+| `supabase/functions/tapestry-identity/index.ts` | Fix `TAPESTRY_API` to `https://api.usetapestry.dev/v1`; improve checkUsername response parsing |
+| `src/components/play/CreateTapestryProfile.tsx` | Add regex validation (`/^[a-zA-Z0-9_]+$/`), length limits (3-20), auto-strip invalid chars, inline error messages |
