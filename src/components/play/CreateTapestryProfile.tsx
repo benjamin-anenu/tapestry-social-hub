@@ -9,7 +9,7 @@ import { COUNTRIES } from "@/lib/locations";
 
 interface CreateTapestryProfileProps {
   walletAddress: string;
-  onCreated: () => void;
+  onCreated: (profileData: Record<string, unknown>) => void;
 }
 
 const CreateTapestryProfile = ({ walletAddress, onCreated }: CreateTapestryProfileProps) => {
@@ -56,6 +56,9 @@ const CreateTapestryProfile = ({ walletAddress, onCreated }: CreateTapestryProfi
       if (fnError) throw fnError;
       if (data?.error) throw new Error(data.error);
 
+      // Pass profile data back before updating local profile
+      onCreated(data);
+
       // 2. Update local profile with extended fields
       const { error: updateError } = await supabase
         .from("profiles")
@@ -69,8 +72,6 @@ const CreateTapestryProfile = ({ walletAddress, onCreated }: CreateTapestryProfi
         .eq("wallet_address", walletAddress);
 
       if (updateError) console.warn("Profile extension failed:", updateError);
-
-      onCreated();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to create profile");
     } finally {

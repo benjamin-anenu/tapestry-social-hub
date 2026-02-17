@@ -7,7 +7,7 @@ const corsHeaders = {
 };
 
 const TAPESTRY_API = "https://api.usetapestry.dev/api/v1";
-const TAPESTRY_V1 = "https://api.usetapestry.dev/v1";
+const NAMESPACE = "find";
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -44,7 +44,7 @@ serve(async (req) => {
       if (bio) body.bio = bio;
 
       const profileRes = await fetch(
-        `${TAPESTRY_API}/profiles/findOrCreate?apiKey=${TAPESTRY_API_KEY}&namespace=find60`,
+        `${TAPESTRY_API}/profiles/findOrCreate?apiKey=${TAPESTRY_API_KEY}&namespace=${NAMESPACE}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -61,7 +61,7 @@ serve(async (req) => {
     } else {
       // === LOOKUP MODE: search for existing profile without creating one ===
       const searchRes = await fetch(
-        `${TAPESTRY_V1}/profiles/search?apiKey=${TAPESTRY_API_KEY}&shouldIncludeExternalProfiles=true`,
+        `${TAPESTRY_API}/profiles/search?apiKey=${TAPESTRY_API_KEY}&shouldIncludeExternalProfiles=true`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -73,17 +73,17 @@ serve(async (req) => {
         const searchData = await searchRes.json();
         const allProfiles = searchData.profiles || [];
 
-        // Find the find60 namespace profile
-        const find60Profile = allProfiles.find((p: any) => p.namespace === "find60");
+        // Find the namespace profile
+        const findProfile = allProfiles.find((p: any) => p.namespace === NAMESPACE);
 
-        if (find60Profile) {
+        if (findProfile) {
           profile = {
             profile: {
-              username: find60Profile.username,
-              bio: find60Profile.bio,
-              image: find60Profile.image,
+              username: findProfile.username,
+              bio: findProfile.bio,
+              image: findProfile.image,
             },
-            username: find60Profile.username,
+            username: findProfile.username,
           };
         }
 
@@ -105,7 +105,7 @@ serve(async (req) => {
     if (profileUsername) {
       try {
         const followersRes = await fetch(
-          `${TAPESTRY_API}/profiles/${profileUsername}/followers?apiKey=${TAPESTRY_API_KEY}&namespace=find60`
+          `${TAPESTRY_API}/profiles/${profileUsername}/followers?apiKey=${TAPESTRY_API_KEY}&namespace=${NAMESPACE}`
         );
         if (followersRes.ok) {
           const data = await followersRes.json();
@@ -115,7 +115,7 @@ serve(async (req) => {
         }
 
         const followingRes = await fetch(
-          `${TAPESTRY_API}/profiles/${profileUsername}/following?apiKey=${TAPESTRY_API_KEY}&namespace=find60`
+          `${TAPESTRY_API}/profiles/${profileUsername}/following?apiKey=${TAPESTRY_API_KEY}&namespace=${NAMESPACE}`
         );
         if (followingRes.ok) {
           const data = await followingRes.json();
@@ -131,7 +131,7 @@ serve(async (req) => {
       if (username && crossAppProfiles.length === 0) {
         try {
           const searchRes = await fetch(
-            `${TAPESTRY_V1}/profiles/search?apiKey=${TAPESTRY_API_KEY}&shouldIncludeExternalProfiles=true`,
+            `${TAPESTRY_API}/profiles/search?apiKey=${TAPESTRY_API_KEY}&shouldIncludeExternalProfiles=true`,
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },

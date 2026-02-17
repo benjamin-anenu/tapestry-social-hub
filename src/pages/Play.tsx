@@ -18,7 +18,7 @@ const Play = () => {
   const walletAddress = publicKey?.toBase58() ?? null;
   const { profile, isLoading, error } = useTapestryIdentity(walletAddress);
   const [phase, setPhase] = useState<Phase>("connect");
-  const [profileCreated, setProfileCreated] = useState(false);
+  const [createdProfile, setCreatedProfile] = useState<Record<string, unknown> | null>(null);
 
   // Auto-advance when wallet connects
   useEffect(() => {
@@ -27,17 +27,14 @@ const Play = () => {
     }
     if (!connected) {
       setPhase("connect");
+      setCreatedProfile(null);
     }
   }, [connected, walletAddress, phase]);
 
-  // Re-fetch after profile creation
-  const { profile: refreshedProfile, isLoading: refreshLoading } = useTapestryIdentity(
-    profileCreated ? walletAddress : null
-  );
-  const activeProfile = profileCreated ? refreshedProfile : profile;
-  const loading = profileCreated ? refreshLoading : isLoading;
+  const activeProfile = createdProfile || profile;
+  const loading = isLoading;
 
-  const hasProfile = activeProfile?.profile != null && (!!activeProfile?.profile?.username || !!activeProfile?.username);
+  const hasProfile = activeProfile?.profile != null && (!!((activeProfile as any)?.profile?.username) || !!((activeProfile as any)?.username));
 
   return (
     <div className="relative flex min-h-screen flex-col items-center bg-background grid-bg overflow-hidden scanlines">
@@ -104,7 +101,7 @@ const Play = () => {
               {!loading && !error && !hasProfile && (
                 <CreateTapestryProfile
                   walletAddress={walletAddress}
-                  onCreated={() => setProfileCreated(true)}
+                  onCreated={(data) => setCreatedProfile(data)}
                 />
               )}
 
