@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Loader2, ArrowRight } from "lucide-react";
+import { ArrowLeft, Loader2, ArrowRight, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTapestryIdentity } from "@/hooks/useTapestryIdentity";
 import IdentityCard from "@/components/play/IdentityCard";
@@ -14,7 +14,7 @@ type Phase = "connect" | "identity" | "lobby";
 
 const Play = () => {
   const navigate = useNavigate();
-  const { publicKey, connected } = useWallet();
+  const { publicKey, connected, disconnect } = useWallet();
   const walletAddress = publicKey?.toBase58() ?? null;
   const { profile, isLoading, error } = useTapestryIdentity(walletAddress);
   const [phase, setPhase] = useState<Phase>("connect");
@@ -107,6 +107,15 @@ const Play = () => {
                   onCreated={() => setProfileCreated(true)}
                 />
               )}
+
+              <Button
+                variant="ghost"
+                onClick={() => { disconnect(); setPhase("connect"); }}
+                className="font-mono text-xs text-muted-foreground hover:text-destructive"
+              >
+                <LogOut className="mr-2 h-3.5 w-3.5" />
+                Disconnect Wallet
+              </Button>
             </motion.div>
           )}
 
