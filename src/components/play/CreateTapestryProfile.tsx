@@ -45,14 +45,30 @@ const CreateTapestryProfile = ({ walletAddress, onCreated }: CreateTapestryProfi
     detectCountry();
   }, []);
 
-  // Debounced nickname availability check
-  useEffect(() => {
+  // Client-side validation
+  const NICK_REGEX = /^[a-zA-Z0-9_]+$/;
+  const MAX_NICK = 20;
+  const MIN_NICK = 3;
+
+  const nicknameValidationError = (() => {
     const trimmed = nickname.trim();
-    if (trimmed.length < 3) {
+    if (trimmed.length === 0) return null;
+    if (trimmed.length < MIN_NICK) return `At least ${MIN_NICK} characters required`;
+    if (trimmed.length > MAX_NICK) return `Maximum ${MAX_NICK} characters`;
+    if (!NICK_REGEX.test(trimmed)) return "Only letters, numbers, and underscores allowed";
+    return null;
+  })();
+
+  const isNicknameFormatValid = nickname.trim().length >= MIN_NICK && nickname.trim().length <= MAX_NICK && NICK_REGEX.test(nickname.trim());
+
+  // Debounced nickname availability check (only when format is valid)
+  useEffect(() => {
+    if (!isNicknameFormatValid) {
       setNicknameStatus("idle");
       return;
     }
 
+    const trimmed = nickname.trim();
     setNicknameStatus("checking");
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
@@ -65,14 +81,14 @@ const CreateTapestryProfile = ({ walletAddress, onCreated }: CreateTapestryProfi
         if (fnError) throw fnError;
         setNicknameStatus(data?.available ? "available" : "taken");
       } catch {
-        setNicknameStatus("idle"); // fail silently, creation will catch it
+        setNicknameStatus("idle");
       }
     }, 500);
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [nickname]);
+  }, [nickname, isNicknameFormatValid]);
 
   const handleCreate = async () => {
     if (!nickname.trim()) return;
@@ -151,19 +167,29 @@ const CreateTapestryProfile = ({ walletAddress, onCreated }: CreateTapestryProfi
         <Input
           placeholder="Nickname (public, permanent) *"
           value={nickname}
-          onChange={(e) => setNickname(e.target.value)}
+          onChange={(e) => {
+            // Auto-strip invalid characters, enforce max length
+            const stripped = e.target.value.replace(/[^a-zA-Z0-9_]/g, "").slice(0, MAX_NICK);
+            setNickname(stripped);
+          }}
+          maxLength={MAX_NICK}
           className="rounded-xl border-border/50 bg-muted/50 font-mono pr-10"
         />
         <div className="absolute right-3 top-1/2 -translate-y-1/2">
           {nicknameIndicator()}
         </div>
       </div>
-      {nicknameStatus === "taken" && (
+      {nicknameValidationError && (
+        <p className="font-mono text-[10px] text-muted-foreground -mt-2">
+          {nicknameValidationError}
+        </p>
+      )}
+      {!nicknameValidationError && nicknameStatus === "taken" && (
         <p className="font-mono text-[10px] text-destructive -mt-2">
           This nickname is already taken. Try another one.
         </p>
       )}
-      {nicknameStatus === "available" && (
+      {!nicknameValidationError && nicknameStatus === "available" && (
         <p className="font-mono text-[10px] text-green-500 -mt-2">
           Nickname is available! ✓
         </p>
@@ -212,7 +238,7 @@ const CreateTapestryProfile = ({ walletAddress, onCreated }: CreateTapestryProfi
 
       <Button
         onClick={handleCreate}
-        disabled={!nickname.trim() || isCreating || nicknameStatus === "taken" || nicknameStatus === "checking"}
+        disabled={!isNicknameFormatValid || isCreating || nicknameStatus === "taken" || nicknameStatus === "checking"}
         className="h-12 rounded-xl font-display font-bold"
         style={{ backgroundImage: "var(--gradient-primary)" }}
       >
