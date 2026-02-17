@@ -6,20 +6,27 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const TAPESTRY_BASE = "https://api.usetapestry.dev/v1";
+const TAPESTRY_API = "https://api.usetapestry.dev/api/v1";
 const NAMESPACE = "find";
 
-// Helper: wallet-based profile search via POST
-async function searchProfilesByWallet(apiKey: string, walletAddress: string) {
+// Helper: find all profiles linked to a wallet address
+async function getProfilesByWallet(apiKey: string, walletAddress: string) {
   const res = await fetch(
-    `${TAPESTRY_BASE}/profiles/search?apiKey=${apiKey}&shouldIncludeExternalProfiles=true`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ walletAddress, limit: 50, offset: 0 }),
-    }
+    `${TAPESTRY_API}/identities/${encodeURIComponent(walletAddress)}/profiles?apiKey=${apiKey}`
   );
   return res;
+}
+
+// Helper: extract namespace name (handles both string and object formats)
+function getNamespaceName(ns: unknown): string {
+  if (typeof ns === "string") return ns;
+  if (ns && typeof ns === "object" && "name" in ns) return (ns as any).name;
+  return "Unknown";
+}
+
+// Helper: extract username from profile (handles various response formats)
+function getProfileUsername(p: any): string | undefined {
+  return p.username || p.id || p.profile?.username || p.profile?.id;
 }
 
 serve(async (req) => {
@@ -38,7 +45,7 @@ serve(async (req) => {
     // === CHECK USERNAME AVAILABILITY MODE ===
     if (checkUsername) {
       const checkRes = await fetch(
-        `${TAPESTRY_BASE}/profiles/${encodeURIComponent(checkUsername)}?apiKey=${TAPESTRY_API_KEY}`
+        `${TAPESTRY_API}/profiles/${encodeURIComponent(checkUsername)}?apiKey=${TAPESTRY_API_KEY}`
       );
       let available = false;
       if (checkRes.status === 404) {
@@ -79,7 +86,7 @@ serve(async (req) => {
       if (bio) body.bio = bio;
 
       const profileRes = await fetch(
-        `${TAPESTRY_BASE}/profiles/findOrCreate?apiKey=${TAPESTRY_API_KEY}&namespace=${NAMESPACE}`,
+        `${TAPESTRY_API}/profiles/findOrCreate?apiKey=${TAPESTRY_API_KEY}&namespace=${NAMESPACE}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -91,23 +98,26 @@ serve(async (req) => {
         const errText = await profileRes.text();
         if (profileRes.status === 400 && errText.includes("already exists")) {
           console.log("Username already exists, attempting wallet lookup recovery...");
-          const recoveryRes = await searchProfilesByWallet(TAPESTRY_API_KEY, walletAddress);
+          const recoveryRes = await getProfilesByWallet(TAPESTRY_API_KEY, walletAddress);
           if (recoveryRes.ok) {
             const recoveryData = await recoveryRes.json();
-            const allProfiles = recoveryData.profiles || [];
-            const findProfile = allProfiles.find((p: any) => p.namespace === NAMESPACE);
+            const allProfiles = recoveryData.profiles || recoveryData || [];
+            const profilesList = Array.isArray(allProfiles) ? allProfiles : [];
+            console.log("Recovery profiles raw:", JSON.stringify(profilesList.slice(0, 2)));
+            const findProfile = profilesList.find((p: any) => getNamespaceName(p.namespace) === NAMESPACE);
             if (findProfile) {
+              const uname = getProfileUsername(findProfile);
               profile = {
                 profile: {
-                  username: findProfile.username,
-                  bio: findProfile.bio,
-                  image: findProfile.image,
+                  username: uname,
+                  bio: findProfile.bio || findProfile.customProperties?.bio,
+                  image: findProfile.image || findProfile.customProperties?.profileImage,
                 },
-                username: findProfile.username,
+                username: uname,
               };
-              crossAppProfiles = allProfiles.map((p: any) => ({
-                namespace: p.namespace || "Unknown",
-                username: p.username,
+              crossAppProfiles = profilesList.map((p: any) => ({
+                namespace: getNamespaceName(p.namespace),
+                username: getProfileUsername(p),
                 followers: p.socialCounts?.followers ?? 0,
                 following: p.socialCounts?.following ?? 0,
               }));
@@ -127,33 +137,39 @@ serve(async (req) => {
       }
     } else {
       // === LOOKUP MODE ===
-      const searchRes = await searchProfilesByWallet(TAPESTRY_API_KEY, walletAddress);
+      const searchRes = await getProfilesByWallet(TAPESTRY_API_KEY, walletAddress);
 
       if (searchRes.ok) {
         const searchData = await searchRes.json();
-        const allProfiles = searchData.profiles || [];
-        const findProfile = allProfiles.find((p: any) => p.namespace === NAMESPACE);
+        console.log("Lookup raw response keys:", Object.keys(searchData));
+        const allProfiles = searchData.profiles || searchData || [];
+        const profilesList = Array.isArray(allProfiles) ? allProfiles : [];
+        if (profilesList.length > 0) {
+          console.log("First profile shape:", JSON.stringify(profilesList[0]));
+        }
+        const findProfile = profilesList.find((p: any) => getNamespaceName(p.namespace) === NAMESPACE);
 
         if (findProfile) {
+          const uname = getProfileUsername(findProfile);
           profile = {
             profile: {
-              username: findProfile.username,
-              bio: findProfile.bio,
-              image: findProfile.image,
+              username: uname,
+              bio: findProfile.bio || findProfile.customProperties?.bio,
+              image: findProfile.image || findProfile.customProperties?.profileImage,
             },
-            username: findProfile.username,
+            username: uname,
           };
         }
 
-        crossAppProfiles = allProfiles.map((p: any) => ({
-          namespace: p.namespace || "Unknown",
-          username: p.username,
+        crossAppProfiles = profilesList.map((p: any) => ({
+          namespace: getNamespaceName(p.namespace),
+          username: getProfileUsername(p),
           followers: p.socialCounts?.followers ?? 0,
           following: p.socialCounts?.following ?? 0,
         }));
       } else {
         const errText = await searchRes.text();
-        console.warn("Tapestry search failed:", searchRes.status, errText);
+        console.warn("Tapestry identity lookup failed:", searchRes.status, errText);
       }
     }
 
@@ -162,21 +178,21 @@ serve(async (req) => {
     if (profileUsername) {
       try {
         const followersRes = await fetch(
-          `${TAPESTRY_BASE}/profiles/followers/${profileUsername}/count?apiKey=${TAPESTRY_API_KEY}`
+          `${TAPESTRY_API}/profiles/${profileUsername}/followers?apiKey=${TAPESTRY_API_KEY}`
         );
         if (followersRes.ok) {
           const data = await followersRes.json();
-          followers = data?.count ?? 0;
+          followers = data?.followers?.length ?? 0;
         } else {
           await followersRes.text();
         }
 
         const followingRes = await fetch(
-          `${TAPESTRY_BASE}/profiles/following/${profileUsername}/count?apiKey=${TAPESTRY_API_KEY}`
+          `${TAPESTRY_API}/profiles/${profileUsername}/following?apiKey=${TAPESTRY_API_KEY}`
         );
         if (followingRes.ok) {
           const data = await followingRes.json();
-          following = data?.count ?? 0;
+          following = data?.following?.length ?? 0;
         } else {
           await followingRes.text();
         }
@@ -187,12 +203,14 @@ serve(async (req) => {
       // If create mode, also fetch cross-app profiles
       if (username && crossAppProfiles.length === 0) {
         try {
-          const searchRes = await searchProfilesByWallet(TAPESTRY_API_KEY, walletAddress);
+          const searchRes = await getProfilesByWallet(TAPESTRY_API_KEY, walletAddress);
           if (searchRes.ok) {
             const searchData = await searchRes.json();
-            crossAppProfiles = (searchData.profiles || []).map((p: any) => ({
-              namespace: p.namespace || "Unknown",
-              username: p.username,
+            const allProfiles = searchData.profiles || searchData || [];
+            const profilesList = Array.isArray(allProfiles) ? allProfiles : [];
+            crossAppProfiles = profilesList.map((p: any) => ({
+              namespace: getNamespaceName(p.namespace),
+              username: getProfileUsername(p),
               followers: p.socialCounts?.followers ?? 0,
               following: p.socialCounts?.following ?? 0,
             }));
