@@ -6,7 +6,7 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const TAPESTRY_API = "https://api.usetapestry.dev/api/v1";
+const TAPESTRY_API = "https://api.usetapestry.dev/v1";
 const NAMESPACE = "find";
 
 serve(async (req) => {
@@ -27,8 +27,19 @@ serve(async (req) => {
       const checkRes = await fetch(
         `${TAPESTRY_API}/profiles/${encodeURIComponent(checkUsername)}?apiKey=${TAPESTRY_API_KEY}&namespace=${NAMESPACE}`
       );
-      const available = !checkRes.ok || checkRes.status === 404;
-      return new Response(JSON.stringify({ username: checkUsername, available: checkRes.status === 404 }), {
+      let available = false;
+      if (checkRes.status === 404) {
+        available = true;
+      } else if (checkRes.ok) {
+        // Profile exists — not available
+        available = false;
+      } else {
+        // Unexpected error — treat as unavailable to be safe
+        const errText = await checkRes.text();
+        console.warn("Username check unexpected response:", checkRes.status, errText);
+        available = false;
+      }
+      return new Response(JSON.stringify({ username: checkUsername, available }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
