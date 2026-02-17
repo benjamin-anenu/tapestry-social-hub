@@ -12,14 +12,14 @@ const IdentityCard = ({ profile, walletAddress }: IdentityCardProps) => {
   const avatarUrl = (profile.profile?.image as string | undefined) ?? profile.image;
   const followers = profile.social?.followers ?? 0;
   const following = profile.social?.following ?? 0;
-  const city = (profile.profile?.city as string | undefined) ?? "";
+  const country = (profile.profile?.country as string | undefined) ?? "";
   const shortWallet = `${walletAddress.slice(0, 4)}...${walletAddress.slice(-4)}`;
 
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
-      className="flex w-full max-w-sm flex-col items-center gap-4 rounded-2xl border border-border/50 bg-card/80 p-6 backdrop-blur-sm"
+      className="flex w-full max-w-sm lg:max-w-md flex-col items-center gap-4 rounded-2xl border border-border/50 bg-card/80 p-6 backdrop-blur-sm"
     >
       <div className="relative h-20 w-20 overflow-hidden rounded-full border-2 border-primary/40 glow-blue">
         {avatarUrl ? (
@@ -33,7 +33,7 @@ const IdentityCard = ({ profile, walletAddress }: IdentityCardProps) => {
 
       <div className="text-center">
         <h3 className="font-display text-xl font-bold text-foreground">{username}</h3>
-        {city && <p className="font-mono text-xs text-primary/80">{city}</p>}
+        {country && <p className="font-mono text-xs text-primary/80">{country}</p>}
         <p className="font-mono text-[10px] text-muted-foreground">{shortWallet}</p>
       </div>
 

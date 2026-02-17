@@ -27,13 +27,29 @@ Deno.serve(async (req) => {
     );
 
     // Get requesting user's profile
-    const { data: myProfile } = await supabase
+    const { data: profileData } = await supabase
       .from("profiles")
-      .select("id, city, country, username")
+      .select("id, country, username")
       .eq("wallet_address", walletAddress)
       .single();
 
-    if (!myProfile) throw new Error("Profile not found");
+    // Auto-create minimal profile if none exists
+    let myProfile = profileData;
+    if (!myProfile) {
+      const { data: newProfile } = await supabase
+        .from("profiles")
+        .insert({
+          wallet_address: walletAddress,
+          user_id: crypto.randomUUID(),
+          username: walletAddress.slice(0, 8),
+          is_online: true,
+          last_seen: new Date().toISOString(),
+        })
+        .select("id, country, username")
+        .single();
+      if (!newProfile) throw new Error("Could not create profile");
+      myProfile = newProfile;
+    }
 
     // Mark self as online
     await supabase
@@ -41,46 +57,32 @@ Deno.serve(async (req) => {
       .update({ is_online: true, last_seen: new Date().toISOString() })
       .eq("id", myProfile.id);
 
-    // Find candidates: online, not self, not already in active vibe session
-    let query = supabase
-      .from("profiles")
-      .select("id, username, city, country")
-      .eq("is_online", true)
-      .eq("is_bot", false)
-      .neq("id", myProfile.id);
+    // Find candidates: online, not self, not bot
+    let candidates: typeof profileData[] | null = null;
 
-    // Prefer same city, then country, then global
-    if (myProfile.city) {
-      query = query.eq("city", myProfile.city);
-    } else if (myProfile.country) {
-      query = query.eq("country", myProfile.country);
-    }
-
-    let { data: candidates } = await query.limit(20);
-
-    // Fallback to country if no city match
-    if ((!candidates || candidates.length === 0) && myProfile.city && myProfile.country) {
-      const { data: countryMatches } = await supabase
+    // Prefer same country first
+    if (myProfile.country) {
+      const { data } = await supabase
         .from("profiles")
-        .select("id, username, city, country")
+        .select("id, username, country")
         .eq("is_online", true)
         .eq("is_bot", false)
         .neq("id", myProfile.id)
         .eq("country", myProfile.country)
         .limit(20);
-      candidates = countryMatches;
+      candidates = data;
     }
 
     // Fallback to global
     if (!candidates || candidates.length === 0) {
-      const { data: globalMatches } = await supabase
+      const { data } = await supabase
         .from("profiles")
-        .select("id, username, city, country")
+        .select("id, username, country")
         .eq("is_online", true)
         .eq("is_bot", false)
         .neq("id", myProfile.id)
         .limit(20);
-      candidates = globalMatches;
+      candidates = data;
     }
 
     // Filter out users already in active sessions with us
@@ -139,7 +141,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Pick a random greeting
     const greeting = AMARA_GREETINGS[Math.floor(Math.random() * AMARA_GREETINGS.length)];
 
     const { data: session, error: sessionErr } = await supabase
