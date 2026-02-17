@@ -12,6 +12,7 @@ const IdentityCard = ({ profile, walletAddress }: IdentityCardProps) => {
   const avatarUrl = (profile.profile?.image as string | undefined) ?? profile.image;
   const followers = profile.social?.followers ?? 0;
   const following = profile.social?.following ?? 0;
+  const city = (profile.profile?.city as string | undefined) ?? "";
   const shortWallet = `${walletAddress.slice(0, 4)}...${walletAddress.slice(-4)}`;
 
   return (
@@ -32,7 +33,8 @@ const IdentityCard = ({ profile, walletAddress }: IdentityCardProps) => {
 
       <div className="text-center">
         <h3 className="font-display text-xl font-bold text-foreground">{username}</h3>
-        <p className="font-mono text-xs text-muted-foreground">{shortWallet}</p>
+        {city && <p className="font-mono text-xs text-primary/80">{city}</p>}
+        <p className="font-mono text-[10px] text-muted-foreground">{shortWallet}</p>
       </div>
 
       <div className="flex gap-6">

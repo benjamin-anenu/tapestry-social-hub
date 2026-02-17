@@ -14,6 +14,45 @@ export type Database = {
   }
   public: {
     Tables: {
+      friendships: {
+        Row: {
+          created_at: string
+          follower_id: string
+          following_id: string
+          id: string
+          mutual: boolean
+        }
+        Insert: {
+          created_at?: string
+          follower_id: string
+          following_id: string
+          id?: string
+          mutual?: boolean
+        }
+        Update: {
+          created_at?: string
+          follower_id?: string
+          following_id?: string
+          id?: string
+          mutual?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "friendships_follower_id_fkey"
+            columns: ["follower_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "friendships_following_id_fkey"
+            columns: ["following_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       games: {
         Row: {
           bounty_base: number | null
@@ -147,6 +186,9 @@ export type Database = {
         Row: {
           avatar_url: string | null
           avg_find_time: number | null
+          bio_text: string | null
+          city: string | null
+          country: string | null
           created_at: string
           display_name: string | null
           find_rate: number | null
@@ -158,7 +200,11 @@ export type Database = {
           hunted_points: number | null
           hunter_points: number | null
           id: string
+          instagram_handle: string | null
           is_bot: boolean
+          is_online: boolean
+          last_seen: string | null
+          real_name: string | null
           tapestry_id: string | null
           total_sol_earned: number | null
           total_sol_staked: number | null
@@ -167,10 +213,14 @@ export type Database = {
           username: string | null
           vibe_score: number | null
           wallet_address: string
+          x_handle: string | null
         }
         Insert: {
           avatar_url?: string | null
           avg_find_time?: number | null
+          bio_text?: string | null
+          city?: string | null
+          country?: string | null
           created_at?: string
           display_name?: string | null
           find_rate?: number | null
@@ -182,7 +232,11 @@ export type Database = {
           hunted_points?: number | null
           hunter_points?: number | null
           id?: string
+          instagram_handle?: string | null
           is_bot?: boolean
+          is_online?: boolean
+          last_seen?: string | null
+          real_name?: string | null
           tapestry_id?: string | null
           total_sol_earned?: number | null
           total_sol_staked?: number | null
@@ -191,10 +245,14 @@ export type Database = {
           username?: string | null
           vibe_score?: number | null
           wallet_address: string
+          x_handle?: string | null
         }
         Update: {
           avatar_url?: string | null
           avg_find_time?: number | null
+          bio_text?: string | null
+          city?: string | null
+          country?: string | null
           created_at?: string
           display_name?: string | null
           find_rate?: number | null
@@ -206,7 +264,11 @@ export type Database = {
           hunted_points?: number | null
           hunter_points?: number | null
           id?: string
+          instagram_handle?: string | null
           is_bot?: boolean
+          is_online?: boolean
+          last_seen?: string | null
+          real_name?: string | null
           tapestry_id?: string | null
           total_sol_earned?: number | null
           total_sol_staked?: number | null
@@ -215,6 +277,7 @@ export type Database = {
           username?: string | null
           vibe_score?: number | null
           wallet_address?: string
+          x_handle?: string | null
         }
         Relationships: []
       }
@@ -259,12 +322,66 @@ export type Database = {
           },
         ]
       }
+      vibe_sessions: {
+        Row: {
+          chat_log: Json
+          created_at: string
+          ended_at: string | null
+          id: string
+          status: string
+          user_a_id: string
+          user_a_verdict: string | null
+          user_b_id: string
+          user_b_verdict: string | null
+        }
+        Insert: {
+          chat_log?: Json
+          created_at?: string
+          ended_at?: string | null
+          id?: string
+          status?: string
+          user_a_id: string
+          user_a_verdict?: string | null
+          user_b_id: string
+          user_b_verdict?: string | null
+        }
+        Update: {
+          chat_log?: Json
+          created_at?: string
+          ended_at?: string | null
+          id?: string
+          status?: string
+          user_a_id?: string
+          user_a_verdict?: string | null
+          user_b_id?: string
+          user_b_verdict?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vibe_sessions_user_a_id_fkey"
+            columns: ["user_a_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vibe_sessions_user_b_id_fkey"
+            columns: ["user_b_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      is_mutual_friend: {
+        Args: { _profile_a: string; _profile_b: string }
+        Returns: boolean
+      }
     }
     Enums: {
       game_role: "hunter" | "hunted" | "duel"
