@@ -1,39 +1,42 @@
 
 
-## Fix Profile Lookup After Creation
+## Fix Tapestry API Endpoints to Match Documentation
 
 ### Problem
-After creating a profile, the app cannot find it again because the wallet lookup uses a broken search endpoint (`POST /v1/profiles/search` -- returns 404 every time). This causes the app to show the "create profile" form even though the profile already exists.
+The wallet-based profile search fails because the code uses the wrong URL and HTTP method. The Tapestry documentation clearly states:
 
-### Root Cause
-The Tapestry API documentation has conflicting information:
-- The **API Reference** says the base URL is `https://api.usetapestry.dev/api/v1` with search at `GET /search/profiles`
-- A **tutorial page** incorrectly shows `POST https://api.usetapestry.dev/v1/profiles/search`
+- **Base URL**: `https://api.usetapestry.dev/v1/` (not `/api/v1/`)
+- **Profile search**: `POST /v1/profiles/search` with `{ walletAddress }` in the request body
+- Current code incorrectly uses: `GET /api/v1/search/profiles?walletAddress=...` (a text search endpoint that requires a `query` parameter)
 
-The current code uses the tutorial's wrong URL, which returns a 404 HTML error page.
-
-### Solution
-Replace all 3 occurrences of the broken `POST /v1/profiles/search` call with the correct API endpoints under the working `/api/v1` base URL.
+### Changes
 
 **File: `supabase/functions/tapestry-identity/index.ts`**
 
-1. **Wallet lookup mode (line 128-135)**: Replace `POST https://api.usetapestry.dev/v1/profiles/search` with `GET ${TAPESTRY_API}/search/profiles?apiKey=...&walletAddress=...&shouldIncludeExternalProfiles=true` using the existing `TAPESTRY_API` constant (`https://api.usetapestry.dev/api/v1`).
+Three search calls need to be reverted to `POST` requests at the correct URL:
 
-2. **Recovery search in create mode (line 84-91)**: Same fix for the recovery fallback when a username "already exists".
+1. **Recovery search (line 84-86)** -- when username "already exists" during creation
+2. **Lookup mode (line 123-124)** -- when checking if a wallet already has a profile
+3. **Cross-app profiles fetch (line 188-189)** -- fetching profiles after creation
 
-3. **Cross-app profiles fetch after create (line 198-205)**: Same fix for the post-creation cross-app profiles lookup.
-
-All three calls change from:
-```
-POST https://api.usetapestry.dev/v1/profiles/search
-Body: { walletAddress }
+Each changes from:
+```text
+GET https://api.usetapestry.dev/api/v1/search/profiles?apiKey=...&walletAddress=...
 ```
 To:
-```
-GET https://api.usetapestry.dev/api/v1/search/profiles?apiKey=...&walletAddress=...&shouldIncludeExternalProfiles=true
+```text
+POST https://api.usetapestry.dev/v1/profiles/search?apiKey=...&shouldIncludeExternalProfiles=true
+Body: { "walletAddress": "...", "limit": 50, "offset": 0 }
 ```
 
-This is consistent with the `findOrCreate` endpoint that already works at the same `/api/v1` base URL.
+Additionally, the `findOrCreate` call (line ~69) should also use `/v1/` instead of `/api/v1/` for consistency with the docs -- it may work today by luck but should be corrected.
+
+### Technical Details
+
+- Add a second constant: `const TAPESTRY_BASE = "https://api.usetapestry.dev/v1"` for the correct base URL
+- Update `findOrCreate` to use `TAPESTRY_BASE`
+- Update all three search calls to use `POST` method with JSON body containing `walletAddress`
+- Keep the existing `TAPESTRY_API` constant only if other endpoints still need it, otherwise replace entirely
+- Redeploy the edge function and verify with a test call
 
 No frontend changes needed.
-
