@@ -95,7 +95,7 @@ const Play = () => {
                     className="h-14 w-full max-w-sm rounded-xl font-display text-lg font-bold shadow-lg glow-blue"
                     style={{ backgroundImage: "var(--gradient-primary)" }}
                   >
-                    Enter the Arena
+                    Show Me My World
                     <ArrowRight className="ml-2 h-5 w-5" />
                   </Button>
                 </>
