@@ -38,6 +38,7 @@ const VibeMatch = () => {
   } | null>(null);
   const lastUserMessageTime = useRef<number>(Date.now());
   const nudgeSentCount = useRef<number>(0);
+  const submittingVerdict = useRef(false);
 
   // Proactive nudge: if user is silent 15+ seconds during bot chat
   useEffect(() => {
@@ -49,9 +50,19 @@ const VibeMatch = () => {
         nudgeSentCount.current += 1;
         lastUserMessageTime.current = Date.now();
         setIsTyping(true);
-        await supabase.functions.invoke("vibe-bot-chat", {
-          body: { sessionId, walletAddress, isNudge: true },
-        });
+        try {
+          const { data } = await supabase.functions.invoke("vibe-bot-chat", {
+            body: { sessionId, walletAddress, isNudge: true },
+          });
+          if (data?.botReply) {
+            setMessages((prev) => [
+              ...prev,
+              { time: Date.now(), sender: "them", text: data.botReply },
+            ]);
+          }
+        } finally {
+          setIsTyping(false);
+        }
       }
     }, 5000);
 
@@ -81,22 +92,15 @@ const VibeMatch = () => {
           setIsBot(data.isBot ?? false);
           setPhase("chatting");
 
-          // If bot, load initial greeting from chat_log
-          if (data.isBot) {
-            const { data: sess } = await supabase
-              .from("vibe_sessions")
-              .select("chat_log")
-              .eq("id", data.sessionId)
-              .single();
-            if (sess?.chat_log && Array.isArray(sess.chat_log)) {
-              setMessages(
-                (sess.chat_log as Array<{ sender: string; text: string; time: number }>).map((m) => ({
-                  time: m.time,
-                  sender: m.sender === walletAddress ? "you" : "them",
-                  text: m.text,
-                }))
-              );
-            }
+          // For bot matches, load initial messages from the response directly
+          if (data.isBot && Array.isArray(data.initialMessages)) {
+            setMessages(
+              data.initialMessages.map((m: { sender: string; text: string; time: number }) => ({
+                time: m.time,
+                sender: m.sender,
+                text: m.text,
+              }))
+            );
           }
         } else {
           setError("No one online right now — try again in a bit!");
@@ -110,9 +114,9 @@ const VibeMatch = () => {
     return () => { cancelled = true; };
   }, [walletAddress]);
 
-  // Subscribe to chat updates via Realtime
+  // Subscribe to chat updates via Realtime — only for human matches
   useEffect(() => {
-    if (!sessionId) return;
+    if (!sessionId || isBot) return;
 
     const channel = supabase
       .channel(`vibe-${sessionId}`)
@@ -136,17 +140,32 @@ const VibeMatch = () => {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [sessionId, walletAddress]);
+  }, [sessionId, walletAddress, isBot]);
 
   const handleSendMessage = useCallback(async (text: string) => {
     if (!sessionId || !walletAddress) return;
     lastUserMessageTime.current = Date.now();
 
     if (isBot) {
+      // Optimistically add user message
+      setMessages((prev) => [
+        ...prev,
+        { time: Date.now(), sender: "you", text },
+      ]);
       setIsTyping(true);
-      await supabase.functions.invoke("vibe-bot-chat", {
-        body: { sessionId, walletAddress, text },
-      });
+      try {
+        const { data } = await supabase.functions.invoke("vibe-bot-chat", {
+          body: { sessionId, walletAddress, text },
+        });
+        if (data?.botReply) {
+          setMessages((prev) => [
+            ...prev,
+            { time: Date.now(), sender: "them", text: data.botReply },
+          ]);
+        }
+      } finally {
+        setIsTyping(false);
+      }
     } else {
       await supabase.functions.invoke("vibe-chat", {
         body: { sessionId, walletAddress, text },
@@ -159,7 +178,8 @@ const VibeMatch = () => {
   }, []);
 
   const handleVerdict = useCallback(async (verdict: "vibe" | "nah") => {
-    if (!sessionId || !walletAddress) return;
+    if (!sessionId || !walletAddress || submittingVerdict.current) return;
+    submittingVerdict.current = true;
     try {
       if (isBot) {
         const { data } = await supabase.functions.invoke("vibe-bot-verdict", {
@@ -174,6 +194,7 @@ const VibeMatch = () => {
       }
       setPhase("result");
     } catch {
+      submittingVerdict.current = false;
       setError("Failed to submit verdict.");
     }
   }, [sessionId, walletAddress, isBot]);
