@@ -82,12 +82,7 @@ serve(async (req) => {
         if (profileRes.status === 400 && errText.includes("already exists")) {
           console.log("Username already exists, attempting wallet lookup recovery...");
           const recoveryRes = await fetch(
-            `https://api.usetapestry.dev/v1/profiles/search?apiKey=${TAPESTRY_API_KEY}&shouldIncludeExternalProfiles=true`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ walletAddress }),
-            }
+            `${TAPESTRY_API}/search/profiles?apiKey=${TAPESTRY_API_KEY}&walletAddress=${encodeURIComponent(walletAddress)}&shouldIncludeExternalProfiles=true`
           );
           if (recoveryRes.ok) {
             const recoveryData = await recoveryRes.json();
@@ -126,12 +121,7 @@ serve(async (req) => {
     } else {
       // === LOOKUP MODE: search for existing profile without creating one ===
       const searchRes = await fetch(
-        `https://api.usetapestry.dev/v1/profiles/search?apiKey=${TAPESTRY_API_KEY}&shouldIncludeExternalProfiles=true`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ walletAddress }),
-        }
+        `${TAPESTRY_API}/search/profiles?apiKey=${TAPESTRY_API_KEY}&walletAddress=${encodeURIComponent(walletAddress)}&shouldIncludeExternalProfiles=true`
       );
 
       if (searchRes.ok) {
@@ -196,12 +186,7 @@ serve(async (req) => {
       if (username && crossAppProfiles.length === 0) {
         try {
           const searchRes = await fetch(
-            `https://api.usetapestry.dev/v1/profiles/search?apiKey=${TAPESTRY_API_KEY}&shouldIncludeExternalProfiles=true`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ walletAddress }),
-            }
+            `${TAPESTRY_API}/search/profiles?apiKey=${TAPESTRY_API_KEY}&walletAddress=${encodeURIComponent(walletAddress)}&shouldIncludeExternalProfiles=true`
           );
           if (searchRes.ok) {
             const searchData = await searchRes.json();
