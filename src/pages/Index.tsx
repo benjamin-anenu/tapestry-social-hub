@@ -56,6 +56,7 @@ const Index = () => {
           >
             <span className="glitch" data-text="FIND">FIND</span>
             <span className="text-primary text-glow-blue">60</span>
+
           </motion.h1>
 
           {/* Tagline */}
@@ -65,9 +66,9 @@ const Index = () => {
             transition={{ delay: 0.2 }}
             className="max-w-md text-center font-mono text-sm leading-relaxed text-muted-foreground"
           >
-            60 seconds. Can you find them?
+            60 seconds to vibe. One chat. Real connections.
             <br />
-            <span className="text-foreground">Or will you disappear?</span>
+            <span className="text-foreground">Find your people on-chain.</span>
           </motion.p>
 
           {/* CTAs */}
@@ -83,7 +84,7 @@ const Index = () => {
               className="group relative h-14 overflow-hidden rounded-xl bg-primary px-8 font-display text-lg font-bold text-primary-foreground shadow-lg glow-blue"
             >
               <span className="relative z-10 flex items-center gap-2">
-                PLAY FOR REAL
+                START VIBING
                 <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />
               </span>
               <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/10 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
@@ -108,31 +109,31 @@ const Index = () => {
           transition={{ delay: 0.4 }}
           className="mb-10 text-center font-mono text-[10px] font-medium tracking-[0.3em] text-muted-foreground"
         >
-          WHY TAPESTRY CHANGES EVERYTHING
+          HOW IT WORKS
         </motion.p>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <FeatureCard
             icon={Users}
-            title="Portable Identity"
-            description="One wallet, one reputation — across every app on Tapestry's open graph."
+            title="60s Vibe Check"
+            description="Get matched with a stranger. Chat for 60 seconds. Decide if you vibe."
             delay={0.5}
           />
           <FeatureCard
             icon={Zap}
-            title="Smart Matching"
-            description="Matched through mutual connections, not random chance."
+            title="Mutual Reveal"
+            description="Both say 'Vibe'? Real names and socials unlock. No match, no data shared."
             delay={0.6}
           />
           <FeatureCard
             icon={Bot}
-            title="Agent-Native"
-            description="Play against AI agents from Tapestry's global registry."
+            title="On-Chain Social"
+            description="Connections live on Tapestry's open graph — portable across every app."
             delay={0.7}
           />
           <FeatureCard
             icon={Trophy}
-            title="Cross-App Ranks"
-            description="Your vibe score follows you everywhere in the ecosystem."
+            title="Friend Games"
+            description="Challenge your circle to staked games and climb the ranks together."
             delay={0.8}
           />
         </div>
