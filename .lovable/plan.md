@@ -1,72 +1,85 @@
 
 
-## Fix Amara Vibe Match — 4 Critical Bugs
+## Fix 4 Issues: Matching, Chat Sort, Desktop Size + Profile Flow
 
-### Root Cause
+### 1. New Users Can't Match ("Profile not found")
 
-The app uses **wallet-based auth** (Solana), not Supabase Auth. But the RLS policies on `vibe_sessions` check `auth.uid()`, which is always NULL for anonymous/wallet users. This blocks:
-- Direct database reads (initial greeting fetch)
-- Realtime subscription updates (messages never arrive)
-- The typing indicator never clears because it depends on Realtime
+**Problem**: `vibe-match` throws "Profile not found" if no `profiles` row exists for the wallet.
 
-### Solution: Remove dependency on direct DB access for bot chats
+**Fix** in `supabase/functions/vibe-match/index.ts`: Replace the `throw` on line 36 with auto-creation of a minimal profile row, then prompt user to complete their profile after the session.
 
-Since bot chat is fully controlled (user sends message -> edge function processes -> returns response), we don't need Realtime or direct DB queries at all for bot matches. The edge function already has service role access.
+```ts
+// Instead of: if (!myProfile) throw new Error("Profile not found");
+let myProfile = profileData;
+if (!myProfile) {
+  const { data: newProfile } = await supabase
+    .from("profiles")
+    .insert({
+      wallet_address: walletAddress,
+      user_id: crypto.randomUUID(),
+      username: walletAddress.slice(0, 8),
+      is_online: true,
+      last_seen: new Date().toISOString(),
+    })
+    .select("id, city, country, username")
+    .single();
+  if (!newProfile) throw new Error("Could not create profile");
+  myProfile = newProfile;
+}
+```
+
+Also remove the city-based matching branches (lines 53-72) and simplify to:
+- If user has `country`, try country match first
+- Fallback to global
+- Then bot fallback
+
+### 2. Chat Messages Sort (Upward Instead of Downward)
+
+**Problem**: `ChatZone.tsx` line 37 sorts `b.time - a.time` (descending = newest at top).
+
+**Fix**: Change to `a.time - b.time` (ascending = newest at bottom, standard chat order).
+
+### 3. Desktop View Too Compact
+
+**Fix** -- apply responsive Tailwind classes:
+
+| File | Change |
+|---|---|
+| `src/pages/VibeMatch.tsx` line 208 | `max-w-lg` to `max-w-lg lg:max-w-2xl` |
+| `src/pages/VibeMatch.tsx` line 239 | `h-[350px]` to `h-[350px] lg:h-[500px]` |
+| `src/pages/Play.tsx` line 50 | `max-w-lg` to `max-w-lg lg:max-w-2xl` |
+| `src/components/play/MainHub.tsx` line 36 | `max-w-md` to `max-w-md lg:max-w-lg` |
+| `src/components/play/IdentityCard.tsx` line 22 | `max-w-sm` to `max-w-sm lg:max-w-md` |
+| `src/components/play/CreateTapestryProfile.tsx` line 65 | `max-w-sm` to `max-w-sm lg:max-w-md` |
+
+### 4. Country: Auto-Detect + Remove City
+
+**`src/components/play/CreateTapestryProfile.tsx`**:
+- Remove `city` state, city dropdown, and city in the `.update()` call
+- Add `useEffect` on mount to fetch country via `https://ipapi.co/json/` and pre-fill the country dropdown
+- User can still manually change country from dropdown
+
+**`src/lib/locations.ts`**:
+- Remove `CITIES` export (no longer needed)
+
+**`src/components/play/IdentityCard.tsx`**:
+- Change line 15 from showing `city` to showing `country` from profile data
+
+**`supabase/functions/vibe-match/index.ts`**:
+- Remove all city-based matching logic; keep country-first then global fallback
 
 ---
 
-### Fix 1: Return bot response directly from `vibe-bot-chat`
-
-**File: `supabase/functions/vibe-bot-chat/index.ts`**
-
-Instead of returning just `{ ok: true }`, return the bot's actual response text so the frontend can update immediately:
-
-```json
-{ "ok": true, "botReply": "Hey! What's good?" }
-```
-
-### Fix 2: Return initial greeting from `vibe-match`
-
-**File: `supabase/functions/vibe-match/index.ts`**
-
-Include the initial `chatLog` in the response so the frontend doesn't need to query `vibe_sessions` directly:
-
-```json
-{ "sessionId": "...", "role": "a", "partnerName": "Queen Tapestry", "isBot": true, "initialMessages": [...] }
-```
-
-Also change `partnerName` from `botProfile.display_name` to `"Queen Tapestry"` (the nickname).
-
-### Fix 3: Rewrite frontend message handling for bot chats
-
-**File: `src/pages/VibeMatch.tsx`**
-
-- Remove the direct `supabase.from("vibe_sessions").select()` call for bot matches (it always fails with 406)
-- Load initial messages from the `vibe-match` response's `initialMessages` field
-- When sending a message to bot: optimistically add user message to state, then add bot reply from the edge function response (no Realtime needed)
-- Keep the Realtime subscription only for human-vs-human matches
-- Clear `isTyping` in the `handleSendMessage` callback after the edge function responds
-- For nudge messages: update state from the edge function response too
-
-### Fix 4: Prevent duplicate verdict submission
-
-**File: `src/pages/VibeMatch.tsx`**
-
-Add a `submittingVerdict` ref/state guard so `handleVerdict` can only fire once.
-
-### Fix 5: Use nickname "Queen Tapestry" 
-
-**File: `supabase/functions/vibe-match/index.ts`**
-
-Change the bot fallback's `partnerName` from `botProfile.display_name ?? "Amara"` to `botProfile.username === "queen_tapestry" ? "Queen Tapestry" : botProfile.display_name ?? "Amara"`.
-
----
-
-### Files to modify
+### Files to Modify
 
 | File | Changes |
 |---|---|
-| `supabase/functions/vibe-bot-chat/index.ts` | Return `botReply` text in response |
-| `supabase/functions/vibe-match/index.ts` | Return `initialMessages` in response; fix partner name to nickname |
-| `src/pages/VibeMatch.tsx` | Use response data instead of direct DB/Realtime for bot chats; fix double-verdict; load initial messages from response |
+| `supabase/functions/vibe-match/index.ts` | Auto-create profile; remove city matching; simplify to country then global |
+| `src/components/demo/ChatZone.tsx` | Fix sort order to ascending |
+| `src/pages/VibeMatch.tsx` | Responsive container and chat height |
+| `src/pages/Play.tsx` | Responsive container |
+| `src/components/play/CreateTapestryProfile.tsx` | Remove city; add country auto-detect via IP; responsive sizing |
+| `src/components/play/IdentityCard.tsx` | Show country instead of city; responsive sizing |
+| `src/components/play/MainHub.tsx` | Responsive card sizing |
+| `src/lib/locations.ts` | Remove CITIES export |
 
