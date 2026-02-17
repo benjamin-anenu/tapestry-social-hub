@@ -1,36 +1,36 @@
 
-## Fix Nickname Availability Check and Add Validation Rules
+
+## Fix Nickname Availability Check and Profile Search
 
 ### Root Cause
 
-The Tapestry API base URL is wrong. The docs clearly show it should be `https://api.usetapestry.dev/v1` but the code uses `https://api.usetapestry.dev/api/v1`. This causes:
-- Username availability checks hit the wrong endpoint, returning unexpected responses (never 404), so every name appears "taken"
-- Profile search returns 404, breaking lookup mode
+Two separate Tapestry API issues are causing all nicknames to appear "taken":
+
+1. **Username availability check (403 error)**: The `GET /profiles/{username}` endpoint returns a 403 when using the `namespace=find` query parameter because the API key restricts namespace filtering to "nemoapp" only. Since the check falls into the "unexpected error" branch, it defaults to `available: false` for every username.
+
+2. **Profile search (404 error)**: The `POST /profiles/search` endpoint does not exist at `/api/v1` -- it lives at `/v1`. This breaks wallet lookup mode.
+
+Meanwhile, `POST /profiles/findOrCreate` works correctly at `/api/v1`. The Tapestry API uses different base paths for different endpoints.
 
 ### Changes
 
-#### 1. Fix Tapestry API base URL (edge function)
-
 **File: `supabase/functions/tapestry-identity/index.ts`**
 
-Change `TAPESTRY_API` from `https://api.usetapestry.dev/api/v1` to `https://api.usetapestry.dev/v1`. This single fix applies to all endpoints: findOrCreate, search, profile lookup, followers, and following.
+1. **Fix username availability check**: Remove the `&namespace=find` parameter from the `GET /profiles/{username}` URL. Usernames are unique across Tapestry, so namespace filtering is unnecessary and causes the 403 error.
 
-Also improve the username availability check logic to handle edge cases by parsing the response body, not just relying on status codes.
+2. **Fix profile search endpoint**: Change the search URL from `${TAPESTRY_API}/profiles/search` to `https://api.usetapestry.dev/v1/profiles/search` (use `/v1` base for this specific endpoint). This applies to all three places the search endpoint is called (lookup mode and cross-app profile fetches).
 
-#### 2. Add client-side nickname validation rules
+3. **Fix followers/following endpoints**: Similarly remove the `namespace` parameter from the followers/following GET endpoints to avoid the same 403 restriction.
 
-**File: `src/components/play/CreateTapestryProfile.tsx`**
-
-Add input validation before the nickname is sent to the server:
-- Minimum 3 characters, maximum 20 characters
-- Alphanumeric and underscores only (no spaces or special characters)
-- Auto-strip invalid characters as the user types
-- Show inline validation messages explaining the rules
-- Skip the server availability check until the local format is valid
+No frontend changes needed -- the `CreateTapestryProfile.tsx` component already has proper validation and status indicators.
 
 ### Technical Details
 
-| File | Change |
-|---|---|
-| `supabase/functions/tapestry-identity/index.ts` | Fix `TAPESTRY_API` to `https://api.usetapestry.dev/v1`; improve checkUsername response parsing |
-| `src/components/play/CreateTapestryProfile.tsx` | Add regex validation (`/^[a-zA-Z0-9_]+$/`), length limits (3-20), auto-strip invalid chars, inline error messages |
+| Endpoint | Current (broken) | Fixed |
+|---|---|---|
+| Check username | `GET /api/v1/profiles/{name}?apiKey=...&namespace=find` (403) | `GET /api/v1/profiles/{name}?apiKey=...` (no namespace) |
+| Profile search | `POST /api/v1/profiles/search` (404) | `POST /v1/profiles/search` |
+| Followers | `GET /api/v1/profiles/{name}/followers?...&namespace=find` (403) | `GET /api/v1/profiles/{name}/followers?apiKey=...` (no namespace) |
+| Following | `GET /api/v1/profiles/{name}/following?...&namespace=find` (403) | `GET /api/v1/profiles/{name}/following?apiKey=...` (no namespace) |
+| findOrCreate | `POST /api/v1/profiles/findOrCreate?...&namespace=find` | No change (already works) |
+
