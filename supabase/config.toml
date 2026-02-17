@@ -11,3 +11,12 @@ verify_jwt = false
 
 [functions.player-chat]
 verify_jwt = false
+
+[functions.vibe-match]
+verify_jwt = false
+
+[functions.vibe-chat]
+verify_jwt = false
+
+[functions.vibe-verdict]
+verify_jwt = false
