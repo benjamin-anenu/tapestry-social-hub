@@ -78,17 +78,51 @@ serve(async (req) => {
 
       if (!profileRes.ok) {
         const errText = await profileRes.text();
-        // Surface "already exists" as a 400, not 500
+        // If "already exists", try to recover by looking up the existing profile
         if (profileRes.status === 400 && errText.includes("already exists")) {
-          return new Response(JSON.stringify({ error: "That nickname is already taken. Please choose a different one." }), {
-            status: 400,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
+          console.log("Username already exists, attempting wallet lookup recovery...");
+          const recoveryRes = await fetch(
+            `https://api.usetapestry.dev/v1/profiles/search?apiKey=${TAPESTRY_API_KEY}&shouldIncludeExternalProfiles=true`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ walletAddress }),
+            }
+          );
+          if (recoveryRes.ok) {
+            const recoveryData = await recoveryRes.json();
+            const allProfiles = recoveryData.profiles || [];
+            const findProfile = allProfiles.find((p: any) => p.namespace === NAMESPACE);
+            if (findProfile) {
+              profile = {
+                profile: {
+                  username: findProfile.username,
+                  bio: findProfile.bio,
+                  image: findProfile.image,
+                },
+                username: findProfile.username,
+              };
+              crossAppProfiles = allProfiles.map((p: any) => ({
+                namespace: p.namespace || "Unknown",
+                username: p.username,
+                followers: p.socialCounts?.followers ?? 0,
+                following: p.socialCounts?.following ?? 0,
+              }));
+            }
+          }
+          // If recovery failed or no profile found, surface the error
+          if (!profile) {
+            return new Response(JSON.stringify({ error: "That nickname is already taken. Please choose a different one." }), {
+              status: 400,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+        } else {
+          throw new Error(`Tapestry API error [${profileRes.status}]: ${errText}`);
         }
-        throw new Error(`Tapestry API error [${profileRes.status}]: ${errText}`);
+      } else {
+        profile = await profileRes.json();
       }
-
-      profile = await profileRes.json();
     } else {
       // === LOOKUP MODE: search for existing profile without creating one ===
       const searchRes = await fetch(
