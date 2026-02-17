@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  ArrowLeft, Gamepad2, Loader2, Swords, Trophy, Users, Zap,
+  ArrowLeft, Bot, Gamepad2, Loader2, Swords, Trophy, Users, Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -79,8 +79,9 @@ const Arena = () => {
     return () => { cancelled = true; };
   }, [walletAddress]);
 
-  const handleStartMatch = useCallback(async () => {
-    if (!walletAddress || !selectedFriend) return;
+  const handleStartMatch = useCallback(async (practiceMode = false) => {
+    if (!walletAddress) return;
+    if (!practiceMode && !selectedFriend) return;
     setPhase("waiting");
     setMatchError(null);
 
@@ -89,7 +90,7 @@ const Arena = () => {
         body: {
           walletAddress,
           role: "duel",
-          stakeAmount: parseFloat(stakeAmount) || 0.01,
+          stakeAmount: practiceMode ? 0 : (parseFloat(stakeAmount) || 0.01),
         },
       });
 
@@ -101,11 +102,11 @@ const Arena = () => {
         setPhase("playing");
       } else {
         setMatchError("Could not create a match. Try again.");
-        setPhase("set-stake");
+        setPhase(practiceMode ? "pick-friend" : "set-stake");
       }
     } catch {
       setMatchError("Matchmaking failed. Please try again.");
-      setPhase("set-stake");
+      setPhase(practiceMode ? "pick-friend" : "set-stake");
     }
   }, [walletAddress, selectedFriend, stakeAmount]);
 
@@ -160,15 +161,24 @@ const Arena = () => {
                 <div className="flex flex-col items-center gap-4 py-12 text-center">
                   <Users className="h-10 w-10 text-muted-foreground/30" />
                   <p className="max-w-xs font-mono text-xs leading-relaxed text-muted-foreground">
-                    You need mutual friends to play in the Arena. Go make some connections first!
+                    No mutual friends yet. Make connections first, or practice against an AI bot!
                   </p>
-                  <Button
-                    onClick={() => navigate("/play/vibe")}
-                    className="gap-2 font-display font-bold"
-                    style={{ backgroundImage: "var(--gradient-primary)" }}
-                  >
-                    <Zap className="h-4 w-4" /> Start Vibing
-                  </Button>
+                  <div className="flex flex-col gap-2 w-full max-w-xs">
+                    <Button
+                      onClick={() => handleStartMatch(true)}
+                      className="gap-2 font-display font-bold"
+                      style={{ backgroundImage: "var(--gradient-danger)" }}
+                    >
+                      <Bot className="h-4 w-4" /> Practice vs AI
+                    </Button>
+                    <Button
+                      onClick={() => navigate("/play/vibe")}
+                      variant="outline"
+                      className="gap-2 font-mono text-xs border-border/50"
+                    >
+                      <Zap className="h-4 w-4" /> Start Vibing Instead
+                    </Button>
+                  </div>
                 </div>
               ) : (
                 <div className="flex flex-col gap-2">
@@ -202,6 +212,21 @@ const Arena = () => {
                       <Swords className="h-4 w-4 text-muted-foreground transition-transform group-hover:scale-110" />
                     </motion.button>
                   ))}
+                  {/* Practice mode option */}
+                  <motion.button
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    onClick={() => handleStartMatch(true)}
+                    className="group flex items-center gap-3 rounded-xl border border-dashed border-border/50 bg-card/40 p-4 text-left backdrop-blur-sm transition-all hover:border-primary/30"
+                  >
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 font-display text-lg font-bold text-primary">
+                      <Bot className="h-5 w-5" />
+                    </div>
+                    <div className="flex flex-1 flex-col">
+                      <span className="font-display text-sm font-bold text-foreground">Practice vs AI</span>
+                      <span className="font-mono text-[10px] text-muted-foreground">No stakes · Sharpen your skills</span>
+                    </div>
+                  </motion.button>
                 </div>
               )}
             </motion.div>
@@ -244,7 +269,7 @@ const Arena = () => {
               )}
 
               <Button
-                onClick={handleStartMatch}
+                onClick={() => handleStartMatch(false)}
                 className="h-14 w-full max-w-xs gap-2 rounded-xl font-display text-lg font-bold shadow-lg"
                 style={{ backgroundImage: "var(--gradient-danger)" }}
               >
