@@ -162,6 +162,13 @@ Deno.serve(async (req) => {
         { follower_id: botProfileId, following_id: profile.id, mutual: true },
       ]);
 
+      // Create conversation linked to this vibe session
+      const [pA, pB] = [profile.id, botProfileId].sort();
+      await supabase.from("conversations").upsert(
+        { participant_a: pA, participant_b: pB, vibe_session_id: sessionId },
+        { onConflict: "participant_a,participant_b" }
+      );
+
       // Increment vibe scores
       await Promise.allSettled([
         supabase.rpc("increment_vibe_score" as never, { profile_id: profile.id } as never),

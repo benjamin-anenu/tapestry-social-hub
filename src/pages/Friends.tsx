@@ -1,162 +1,127 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useWallet } from "@solana/wallet-adapter-react";
-import { ArrowLeft, Users, Loader2, UserPlus, Gamepad2, Heart } from "lucide-react";
+import { ArrowLeft, Users, Loader2, Heart, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { motion, AnimatePresence } from "framer-motion";
+import { Input } from "@/components/ui/input";
+import { motion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
+import { formatDistanceToNow } from "date-fns";
 
-interface FriendProfile {
-  id: string;
+interface ConversationPreview {
+  conversationId: string;
+  friendProfileId: string;
   username: string | null;
-  display_name: string | null;
-  avatar_url: string | null;
-  city: string | null;
-  country: string | null;
-  real_name: string | null;
-  x_handle: string | null;
-  instagram_handle: string | null;
-  bio_text: string | null;
-  vibe_score: number | null;
-  mutual: boolean;
+  displayName: string | null;
+  isOnline: boolean;
+  lastMessage: string | null;
+  lastMessageAt: string | null;
 }
 
-const FriendCard = ({ friend, onChallenge }: { friend: FriendProfile; onChallenge: () => void }) => (
-  <motion.div
-    initial={{ opacity: 0, y: 12 }}
-    animate={{ opacity: 1, y: 0 }}
-    className="flex items-start gap-4 rounded-2xl border border-border/50 bg-card/80 p-4 backdrop-blur-sm"
-  >
-    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 font-display text-lg font-bold text-primary">
-      {(friend.username ?? "?")[0].toUpperCase()}
-    </div>
-    <div className="flex flex-1 flex-col gap-1">
-      <div className="flex items-center gap-2">
-        <span className="font-display text-sm font-bold text-foreground">
-          {friend.username ?? friend.display_name ?? "Unknown"}
-        </span>
-        {friend.mutual && (
-          <span className="rounded-full bg-secondary/10 px-2 py-0.5 font-mono text-[9px] font-bold text-secondary">
-            MUTUAL
+const ConversationRow = ({ convo, onClick }: { convo: ConversationPreview; onClick: () => void }) => {
+  const name = convo.username ?? convo.displayName ?? "Unknown";
+  const initial = name[0]?.toUpperCase() ?? "?";
+  const timeAgo = convo.lastMessageAt
+    ? formatDistanceToNow(new Date(convo.lastMessageAt), { addSuffix: false })
+    : "";
+
+  return (
+    <motion.button
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      onClick={onClick}
+      className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors hover:bg-card/80 active:bg-card"
+    >
+      {/* Avatar */}
+      <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary/10 font-display text-lg font-bold text-primary">
+        {initial}
+        {convo.isOnline && (
+          <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-background bg-secondary" />
+        )}
+      </div>
+
+      {/* Name + preview */}
+      <div className="flex flex-1 flex-col gap-0.5 overflow-hidden">
+        <span className="truncate font-display text-sm font-bold text-foreground">{name}</span>
+        {convo.lastMessage ? (
+          <span className="truncate font-mono text-[11px] text-muted-foreground">
+            {convo.lastMessage}
+          </span>
+        ) : (
+          <span className="font-mono text-[11px] italic text-muted-foreground/50">
+            Start chatting...
           </span>
         )}
       </div>
-      {friend.city && (
-        <span className="font-mono text-[10px] text-muted-foreground">
-          {friend.city}{friend.country ? `, ${friend.country}` : ""}
-        </span>
+
+      {/* Timestamp */}
+      {timeAgo && (
+        <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{timeAgo}</span>
       )}
-      {/* Only show private details for mutual friends */}
-      {friend.mutual && friend.real_name && (
-        <span className="font-mono text-[10px] text-accent-foreground">
-          {friend.real_name}
-        </span>
-      )}
-      {friend.mutual && (friend.x_handle || friend.instagram_handle) && (
-        <div className="flex gap-2 pt-0.5">
-          {friend.x_handle && (
-            <a
-              href={`https://x.com/${friend.x_handle}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-mono text-[10px] text-primary hover:underline"
-            >
-              @{friend.x_handle}
-            </a>
-          )}
-          {friend.instagram_handle && (
-            <a
-              href={`https://instagram.com/${friend.instagram_handle}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-mono text-[10px] text-primary hover:underline"
-            >
-              IG: {friend.instagram_handle}
-            </a>
-          )}
-        </div>
-      )}
-      {friend.mutual && friend.bio_text && (
-        <p className="pt-1 font-mono text-[10px] leading-relaxed text-muted-foreground">{friend.bio_text}</p>
-      )}
-    </div>
-    {friend.mutual && (
-      <Button
-        size="sm"
-        variant="outline"
-        onClick={onChallenge}
-        className="shrink-0 gap-1 border-border/50 font-mono text-[10px]"
-      >
-        <Gamepad2 className="h-3 w-3" /> Challenge
-      </Button>
-    )}
-  </motion.div>
-);
+    </motion.button>
+  );
+};
 
 const Friends = () => {
   const navigate = useNavigate();
   const { publicKey } = useWallet();
   const walletAddress = publicKey?.toBase58() ?? null;
-  const [friends, setFriends] = useState<FriendProfile[]>([]);
+  const [conversations, setConversations] = useState<ConversationPreview[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     if (!walletAddress) return;
     let cancelled = false;
 
-    const fetchFriends = async () => {
+    const fetch_ = async () => {
       setLoading(true);
       try {
-        // Get my profile id first
         const { data: myProfile } = await supabase
           .from("profiles")
           .select("id")
           .eq("wallet_address", walletAddress)
           .single();
-
         if (!myProfile || cancelled) { setLoading(false); return; }
 
-        // Get friendships where I'm involved
-        const { data: friendships } = await supabase
-          .from("friendships")
-          .select("follower_id, following_id, mutual")
-          .or(`follower_id.eq.${myProfile.id},following_id.eq.${myProfile.id}`);
+        // Get conversations where I'm a participant
+        const { data: convos } = await supabase
+          .from("conversations")
+          .select("id, participant_a, participant_b, last_message_text, last_message_at")
+          .or(`participant_a.eq.${myProfile.id},participant_b.eq.${myProfile.id}`)
+          .order("last_message_at", { ascending: false, nullsFirst: false });
 
-        if (!friendships?.length || cancelled) { setLoading(false); return; }
+        if (!convos?.length || cancelled) { setLoading(false); return; }
 
-        // Collect friend profile IDs
-        const friendIds = new Set<string>();
-        const mutualMap = new Map<string, boolean>();
-        for (const f of friendships) {
-          const friendId = f.follower_id === myProfile.id ? f.following_id : f.follower_id;
-          friendIds.add(friendId);
-          // Mark mutual if any record says mutual
-          if (f.mutual) mutualMap.set(friendId, true);
-          else if (!mutualMap.has(friendId)) mutualMap.set(friendId, false);
-        }
+        // Get friend profile IDs
+        const friendIds = convos.map(c =>
+          c.participant_a === myProfile.id ? c.participant_b : c.participant_a
+        );
 
-        if (friendIds.size === 0 || cancelled) { setLoading(false); return; }
-
-        // Fetch profiles - RLS will handle hiding sensitive fields for non-mutual
         const { data: profiles } = await supabase
           .from("profiles")
-          .select("id, username, display_name, avatar_url, city, country, real_name, x_handle, instagram_handle, bio_text, vibe_score")
-          .in("id", Array.from(friendIds));
+          .select("id, username, display_name, is_online")
+          .in("id", friendIds);
 
         if (cancelled) return;
 
-        const result: FriendProfile[] = (profiles ?? []).map((p) => ({
-          ...p,
-          mutual: mutualMap.get(p.id) ?? false,
-        }));
+        const profileMap = new Map((profiles ?? []).map(p => [p.id, p]));
 
-        // Sort: mutual first, then alphabetical
-        result.sort((a, b) => {
-          if (a.mutual !== b.mutual) return a.mutual ? -1 : 1;
-          return (a.username ?? "").localeCompare(b.username ?? "");
+        const result: ConversationPreview[] = convos.map(c => {
+          const friendId = c.participant_a === myProfile.id ? c.participant_b : c.participant_a;
+          const p = profileMap.get(friendId);
+          return {
+            conversationId: c.id,
+            friendProfileId: friendId,
+            username: p?.username ?? null,
+            displayName: p?.display_name ?? null,
+            isOnline: p?.is_online ?? false,
+            lastMessage: c.last_message_text,
+            lastMessageAt: c.last_message_at,
+          };
         });
 
-        setFriends(result);
+        setConversations(result);
       } catch {
         // silently fail
       } finally {
@@ -164,9 +129,15 @@ const Friends = () => {
       }
     };
 
-    fetchFriends();
+    fetch_();
     return () => { cancelled = true; };
   }, [walletAddress]);
+
+  const filtered = search
+    ? conversations.filter(c =>
+        (c.username ?? c.displayName ?? "").toLowerCase().includes(search.toLowerCase())
+      )
+    : conversations;
 
   return (
     <div className="relative flex min-h-screen flex-col items-center bg-background grid-bg overflow-hidden scanlines">
@@ -174,56 +145,69 @@ const Friends = () => {
         <div className="absolute -top-40 left-1/2 h-[600px] w-[600px] -translate-x-1/2 rounded-full bg-secondary/5 blur-[150px]" />
       </div>
 
-      <div className="relative z-10 flex w-full max-w-lg flex-1 flex-col gap-6 px-6 py-16">
+      <div className="relative z-10 flex w-full max-w-lg flex-1 flex-col px-4 py-12">
         {/* Header */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-center gap-2 text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-secondary/10">
-            <Users className="h-7 w-7 text-secondary" />
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-center gap-2 text-center mb-4">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-secondary/10">
+            <Users className="h-6 w-6 text-secondary" />
           </div>
-          <h1 className="font-display text-3xl font-bold text-foreground">
+          <h1 className="font-display text-2xl font-bold text-foreground">
             My <span className="text-secondary text-glow-green">Circle</span>
           </h1>
           <p className="font-mono text-[10px] text-muted-foreground">
-            {friends.length} connection{friends.length !== 1 ? "s" : ""}
+            {conversations.length} chat{conversations.length !== 1 ? "s" : ""}
           </p>
         </motion.div>
+
+        {/* Search */}
+        {conversations.length > 3 && (
+          <div className="relative mb-3">
+            <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search..."
+              className="h-9 pl-9 font-mono text-xs border-border/30 bg-card/50"
+            />
+          </div>
+        )}
 
         {/* Content */}
         {loading ? (
           <div className="flex flex-col items-center gap-3 py-12">
             <Loader2 className="h-6 w-6 animate-spin text-primary" />
-            <p className="font-mono text-xs text-muted-foreground">Loading your circle...</p>
+            <p className="font-mono text-xs text-muted-foreground">Loading chats...</p>
           </div>
-        ) : friends.length === 0 ? (
+        ) : filtered.length === 0 ? (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center gap-4 py-12 text-center">
             <Heart className="h-10 w-10 text-muted-foreground/30" />
             <p className="max-w-xs font-mono text-xs leading-relaxed text-muted-foreground">
-              No connections yet. Go make some friends in the Vibe Match!
+              {search ? "No matches found." : "No connections yet. Go make some friends in the Vibe Match!"}
             </p>
-            <Button
-              onClick={() => navigate("/play/vibe")}
-              className="gap-2 font-display font-bold"
-              style={{ backgroundImage: "var(--gradient-primary)" }}
-            >
-              <UserPlus className="h-4 w-4" /> Start Vibing
-            </Button>
+            {!search && (
+              <Button
+                onClick={() => navigate("/play/vibe")}
+                className="gap-2 font-display font-bold"
+                style={{ backgroundImage: "var(--gradient-primary)" }}
+              >
+                Start Vibing
+              </Button>
+            )}
           </motion.div>
         ) : (
-          <AnimatePresence>
-            <div className="flex flex-col gap-3">
-              {friends.map((f, i) => (
-                <FriendCard
-                  key={f.id}
-                  friend={f}
-                  onChallenge={() => navigate("/play/arena")}
-                />
-              ))}
-            </div>
-          </AnimatePresence>
+          <div className="flex flex-col gap-0.5">
+            {filtered.map(c => (
+              <ConversationRow
+                key={c.conversationId}
+                convo={c}
+                onClick={() => navigate(`/play/friends/${c.friendProfileId}`)}
+              />
+            ))}
+          </div>
         )}
 
         {/* Back */}
-        <Button variant="ghost" onClick={() => navigate("/play")} className="mx-auto text-muted-foreground">
+        <Button variant="ghost" onClick={() => navigate("/play")} className="mx-auto mt-6 text-muted-foreground">
           <ArrowLeft className="mr-2 h-4 w-4" /> Back to Hub
         </Button>
       </div>

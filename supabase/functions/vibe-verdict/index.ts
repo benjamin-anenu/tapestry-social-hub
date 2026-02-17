@@ -76,6 +76,13 @@ Deno.serve(async (req) => {
         { follower_id: partnerId, following_id: profile.id, mutual: true },
       ]);
 
+      // Create conversation linked to this vibe session
+      const [pA, pB] = [profile.id, partnerId].sort();
+      await supabase.from("conversations").upsert(
+        { participant_a: pA, participant_b: pB, vibe_session_id: sessionId },
+        { onConflict: "participant_a,participant_b" }
+      );
+
       // Call Tapestry follow API for both
       const apiKey = Deno.env.get("TAPESTRY_API_KEY");
       if (apiKey) {

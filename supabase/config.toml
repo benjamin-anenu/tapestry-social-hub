@@ -26,3 +26,6 @@ verify_jwt = false
 
 [functions.vibe-bot-verdict]
 verify_jwt = false
+
+[functions.direct-chat]
+verify_jwt = false
