@@ -37,7 +37,7 @@ const Play = () => {
   const activeProfile = profileCreated ? refreshedProfile : profile;
   const loading = profileCreated ? refreshLoading : isLoading;
 
-  const hasProfile = !!activeProfile?.profile?.username || !!activeProfile?.username;
+  const hasProfile = activeProfile?.profile != null && (!!activeProfile?.profile?.username || !!activeProfile?.username);
 
   return (
     <div className="relative flex min-h-screen flex-col items-center bg-background grid-bg overflow-hidden scanlines">
