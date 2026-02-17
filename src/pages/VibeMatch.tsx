@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -36,6 +36,27 @@ const VibeMatch = () => {
     botVerdict?: string;
     botReason?: string;
   } | null>(null);
+  const lastUserMessageTime = useRef<number>(Date.now());
+  const nudgeSentCount = useRef<number>(0);
+
+  // Proactive nudge: if user is silent 15+ seconds during bot chat
+  useEffect(() => {
+    if (!isBot || phase !== "chatting" || !sessionId || !walletAddress) return;
+
+    const interval = setInterval(async () => {
+      const silenceDuration = Date.now() - lastUserMessageTime.current;
+      if (silenceDuration >= 15000 && nudgeSentCount.current < 3) {
+        nudgeSentCount.current += 1;
+        lastUserMessageTime.current = Date.now();
+        setIsTyping(true);
+        await supabase.functions.invoke("vibe-bot-chat", {
+          body: { sessionId, walletAddress, isNudge: true },
+        });
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [isBot, phase, sessionId, walletAddress]);
 
   // Find a match on mount
   useEffect(() => {
@@ -119,6 +140,7 @@ const VibeMatch = () => {
 
   const handleSendMessage = useCallback(async (text: string) => {
     if (!sessionId || !walletAddress) return;
+    lastUserMessageTime.current = Date.now();
 
     if (isBot) {
       setIsTyping(true);

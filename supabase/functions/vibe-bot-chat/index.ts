@@ -51,8 +51,8 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { sessionId, walletAddress, text } = await req.json();
-    if (!sessionId || !walletAddress || !text) throw new Error("Missing fields");
+    const { sessionId, walletAddress, text, isNudge } = await req.json();
+    if (!sessionId || !walletAddress || (!text && !isNudge)) throw new Error("Missing fields");
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -81,23 +81,29 @@ Deno.serve(async (req) => {
       throw new Error("Not a participant");
     }
 
-    // Append user's message
+    // Append user's message (skip if nudge)
     const chatLog = Array.isArray(session.chat_log) ? [...session.chat_log] : [];
-    chatLog.push({
-      sender: walletAddress,
-      text: text.slice(0, 500),
-      time: Date.now(),
-    });
+    if (!isNudge && text) {
+      chatLog.push({
+        sender: walletAddress,
+        text: text.slice(0, 500),
+        time: Date.now(),
+      });
 
-    // Update chat_log with user message immediately
-    await supabase
-      .from("vibe_sessions")
-      .update({ chat_log: chatLog })
-      .eq("id", sessionId);
+      // Update chat_log with user message immediately
+      await supabase
+        .from("vibe_sessions")
+        .update({ chat_log: chatLog })
+        .eq("id", sessionId);
+    }
 
     // Build conversation for AI
+    const nudgeInstruction = isNudge
+      ? "\n\n[SYSTEM NOTE: The other person has been silent for a while. Send a follow-up message to keep the conversation going. Be natural — tease them gently, ask a new question, or share something about yourself. Don't mention that they've been quiet directly.]"
+      : "";
+
     const aiMessages = [
-      { role: "system", content: AMARA_SYSTEM_PROMPT },
+      { role: "system", content: AMARA_SYSTEM_PROMPT + nudgeInstruction },
       ...chatLog.map((m: { sender: string; text: string }) => ({
         role: m.sender === BOT_WALLET ? "assistant" : "user",
         content: m.text,
