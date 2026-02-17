@@ -1,36 +1,39 @@
 
 
-## Fix Nickname Availability Check and Profile Search
+## Fix Profile Lookup After Creation
+
+### Problem
+After creating a profile, the app cannot find it again because the wallet lookup uses a broken search endpoint (`POST /v1/profiles/search` -- returns 404 every time). This causes the app to show the "create profile" form even though the profile already exists.
 
 ### Root Cause
+The Tapestry API documentation has conflicting information:
+- The **API Reference** says the base URL is `https://api.usetapestry.dev/api/v1` with search at `GET /search/profiles`
+- A **tutorial page** incorrectly shows `POST https://api.usetapestry.dev/v1/profiles/search`
 
-Two separate Tapestry API issues are causing all nicknames to appear "taken":
+The current code uses the tutorial's wrong URL, which returns a 404 HTML error page.
 
-1. **Username availability check (403 error)**: The `GET /profiles/{username}` endpoint returns a 403 when using the `namespace=find` query parameter because the API key restricts namespace filtering to "nemoapp" only. Since the check falls into the "unexpected error" branch, it defaults to `available: false` for every username.
-
-2. **Profile search (404 error)**: The `POST /profiles/search` endpoint does not exist at `/api/v1` -- it lives at `/v1`. This breaks wallet lookup mode.
-
-Meanwhile, `POST /profiles/findOrCreate` works correctly at `/api/v1`. The Tapestry API uses different base paths for different endpoints.
-
-### Changes
+### Solution
+Replace all 3 occurrences of the broken `POST /v1/profiles/search` call with the correct API endpoints under the working `/api/v1` base URL.
 
 **File: `supabase/functions/tapestry-identity/index.ts`**
 
-1. **Fix username availability check**: Remove the `&namespace=find` parameter from the `GET /profiles/{username}` URL. Usernames are unique across Tapestry, so namespace filtering is unnecessary and causes the 403 error.
+1. **Wallet lookup mode (line 128-135)**: Replace `POST https://api.usetapestry.dev/v1/profiles/search` with `GET ${TAPESTRY_API}/search/profiles?apiKey=...&walletAddress=...&shouldIncludeExternalProfiles=true` using the existing `TAPESTRY_API` constant (`https://api.usetapestry.dev/api/v1`).
 
-2. **Fix profile search endpoint**: Change the search URL from `${TAPESTRY_API}/profiles/search` to `https://api.usetapestry.dev/v1/profiles/search` (use `/v1` base for this specific endpoint). This applies to all three places the search endpoint is called (lookup mode and cross-app profile fetches).
+2. **Recovery search in create mode (line 84-91)**: Same fix for the recovery fallback when a username "already exists".
 
-3. **Fix followers/following endpoints**: Similarly remove the `namespace` parameter from the followers/following GET endpoints to avoid the same 403 restriction.
+3. **Cross-app profiles fetch after create (line 198-205)**: Same fix for the post-creation cross-app profiles lookup.
 
-No frontend changes needed -- the `CreateTapestryProfile.tsx` component already has proper validation and status indicators.
+All three calls change from:
+```
+POST https://api.usetapestry.dev/v1/profiles/search
+Body: { walletAddress }
+```
+To:
+```
+GET https://api.usetapestry.dev/api/v1/search/profiles?apiKey=...&walletAddress=...&shouldIncludeExternalProfiles=true
+```
 
-### Technical Details
+This is consistent with the `findOrCreate` endpoint that already works at the same `/api/v1` base URL.
 
-| Endpoint | Current (broken) | Fixed |
-|---|---|---|
-| Check username | `GET /api/v1/profiles/{name}?apiKey=...&namespace=find` (403) | `GET /api/v1/profiles/{name}?apiKey=...` (no namespace) |
-| Profile search | `POST /api/v1/profiles/search` (404) | `POST /v1/profiles/search` |
-| Followers | `GET /api/v1/profiles/{name}/followers?...&namespace=find` (403) | `GET /api/v1/profiles/{name}/followers?apiKey=...` (no namespace) |
-| Following | `GET /api/v1/profiles/{name}/following?...&namespace=find` (403) | `GET /api/v1/profiles/{name}/following?apiKey=...` (no namespace) |
-| findOrCreate | `POST /api/v1/profiles/findOrCreate?...&namespace=find` | No change (already works) |
+No frontend changes needed.
 
