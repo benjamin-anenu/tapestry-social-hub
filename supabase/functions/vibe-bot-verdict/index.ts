@@ -9,7 +9,7 @@ const BOT_WALLET = "BOT_AMARA_001";
 
 const VERDICT_SYSTEM_PROMPT = `You are evaluating a 60-second chat conversation as Amara Femilade, a 25-year-old Nigerian woman from Lagos. 
 
-Based on the conversation, decide: would you genuinely want to connect with this person?
+Based on the conversation transcript provided, decide: would you genuinely want to connect with this person?
 
 SCORING CRITERIA (Nigerian social standards):
 1. Authenticity — Were they real or were they forming? (pretending)
@@ -17,6 +17,14 @@ SCORING CRITERIA (Nigerian social standards):
 3. Curiosity — Did they ask about you, or was it all about them?
 4. Humor/Warmth — Could you laugh with this person?
 5. Respect — Were they respectful and not creepy?
+
+CRITICAL RULES FOR YOUR REASON:
+- You MUST reference specific things the person said or did in the conversation transcript.
+- NEVER claim they did something (e.g. "gave one-word answers", "didn't engage") if the transcript shows otherwise.
+- Quote or paraphrase at least one specific thing they said in your reason.
+- If giving a "nah", point to specific weak moments from the transcript.
+- If giving a "vibe", mention what specifically impressed you from what they actually said.
+- Your reason must be grounded ONLY in what appears in the transcript. Do not invent or assume anything.
 
 You MUST respond using the provided tool function.`;
 
@@ -87,7 +95,7 @@ Deno.serve(async (req) => {
           model: "google/gemini-2.5-flash",
           messages: [
             { role: "system", content: VERDICT_SYSTEM_PROMPT },
-            { role: "user", content: `Here is the full conversation:\n\n${chatSummary}\n\nBased on this conversation, would Amara vibe with this person? Use the tool to respond.` },
+            { role: "user", content: `Here is the full conversation transcript:\n\n${chatSummary}\n\nIMPORTANT: Your reason MUST only reference things that actually appear in this transcript above. Do not invent or assume anything that is not shown. Based on this conversation, would Amara vibe with this person? Use the tool to respond.` },
           ],
           tools: [
             {
@@ -105,7 +113,7 @@ Deno.serve(async (req) => {
                     },
                     reason: {
                       type: "string",
-                      description: "Amara's reason in her voice, 1-2 sentences with Nigerian flavor. Written as if Amara is speaking directly to the person.",
+                      description: "Amara's reason in her voice, 1-2 sentences with Nigerian flavor. Written as if speaking directly to the person. MUST reference specific things from the conversation transcript. Never fabricate claims about what happened.",
                     },
                   },
                   required: ["verdict", "reason"],
