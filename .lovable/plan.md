@@ -1,66 +1,41 @@
 
 
-## Fix: Professional Mobile Chat Keyboard Experience
+## Unify Wallet Connect Screen Across All Devices
 
-### Problem
+### What changes
 
-The current approach fights the browser's natural keyboard behavior. It uses `fixed inset-0` (which ignores the keyboard) and then tries to manually detect the keyboard height via `visualViewport` to add padding. This is fragile and doesn't work reliably across devices.
+**File:** `src/components/play/MobileWalletConnect.tsx`
 
-Professional chat apps (WhatsApp, Instagram, ChatGPT) work differently -- they let the browser naturally resize the layout when the keyboard opens.
+1. **Show `WalletMultiButton` on ALL devices** -- Remove the mobile-specific branching that shows separate "Open in Phantom" / "Open in Solflare" buttons. Every device (mobile, tablet, desktop) will see the same standard wallet select button.
 
-### Solution: Work WITH the browser, not against it
+2. **Move "Don't have a wallet app?" section inside the "What is a wallet?" collapsible** -- The app store download links (Phantom iOS/Android, Solflare iOS/Android) will be placed at the bottom of the collapsible help content, after the setup instructions. This way users read the educational content first and then see download links right where they need them.
 
-The fix is simple and involves removing complexity, not adding it.
+3. **Remove unused code** -- The deep link constants (`PHANTOM_DEEP_LINK`, `SOLFLARE_DEEP_LINK`), `useIsMobile` import, and wallet detection logic (`hasPhantom`, `hasSolflare`, `hasAnyWallet`, `showStandardButton`) will all be removed since they are no longer needed.
 
----
+### Resulting layout (all devices)
 
-### Change 1: VibeMatch.tsx -- Use `dvh` instead of `fixed inset-0`
+```text
++----------------------------------+
+|      [Select Wallet Button]      |
+|                                  |
+|   > What is a wallet?            |
+|   (collapsible, when expanded:)  |
+|   - What is a crypto wallet?     |
+|   - Which wallet should I use?   |
+|   - Setup on Mobile (steps)      |
+|   - Setup on Desktop (steps)     |
+|   - Don't have a wallet app?     |
+|     [Phantom iOS] [Phantom And.] |
+|     [Solflare iOS] [Solflare A.] |
++----------------------------------+
+```
 
-Replace `fixed inset-0` with `h-[100dvh]` on the outer container.
+### Technical details
 
-- `100dvh` (dynamic viewport height) is a CSS unit that automatically shrinks when the mobile keyboard opens
-- This means the entire layout naturally compresses to fit the visible area above the keyboard
-- The flex layout ensures the input stays at the bottom of the visible area and the messages area shrinks
-- No manual keyboard detection needed
-
-### Change 2: ChatZone.tsx -- Remove all keyboard hacks
-
-Strip out:
-- The `keyboardPadding` state
-- The `visualViewport` resize/scroll listener
-- The dynamic `paddingBottom` style on the input container
-
-These are no longer needed because `100dvh` handles everything automatically.
-
-Keep:
-- The `scrollToBottom` on new messages (already works)
-- The `onFocus` scroll on the input (ensures latest message is visible when you tap the input)
-- The `text-base` font size on the input (prevents iOS auto-zoom on inputs smaller than 16px)
-
-### Change 3: FriendChat.tsx -- Same treatment
-
-Replace `h-screen` with `h-[100dvh]` so the direct message chat also works properly with mobile keyboards.
-
----
-
-### Why this works
-
-On mobile browsers:
-- `100vh` = full viewport including area behind keyboard (bad -- keyboard covers content)
-- `fixed inset-0` = same problem as 100vh
-- `100dvh` = viewport minus keyboard height (good -- content reshapes to fit)
-
-This is exactly what WhatsApp, iMessage, and ChatGPT web do. The layout naturally adapts, the input stays visible, and messages scroll to show the latest one.
-
----
-
-### Technical Details
-
-**Files to modify:**
-
-1. `src/pages/VibeMatch.tsx` (line 230): Change `fixed inset-0` to `h-[100dvh]`
-2. `src/components/demo/ChatZone.tsx`: Remove `keyboardPadding` state, remove `visualViewport` effect (lines 30, 50-66, 157), remove dynamic padding style
-3. `src/pages/FriendChat.tsx` (line 231): Change `h-screen` to `h-[100dvh]`
-
-Net result: ~20 lines of code removed, 2 class name changes. Simpler and more reliable.
+- Remove imports: `useIsMobile`, `ExternalLink`
+- Remove constants: `PHANTOM_DEEP_LINK`, `SOLFLARE_DEEP_LINK`
+- Keep: `APP_LINKS` object (still used for download links inside collapsible)
+- Replace the conditional render (`showStandardButton ? ... : ...`) with just `<WalletMultiButton />`
+- Move the "Don't have a wallet app?" block (with its 4 download buttons) to the end of the `CollapsibleContent`, after the Desktop setup section
+- Update mobile setup step 3 from "tap Open in Phantom" to "tap Select Wallet above"
 
