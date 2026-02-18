@@ -4,6 +4,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { WalletProviderWrapper } from "@/providers/WalletProvider";
+import { useOnboarding } from "@/hooks/useOnboarding";
+import { OnboardingFlow } from "@/components/onboarding/OnboardingFlow";
 import Index from "./pages/Index";
 import Play from "./pages/Play";
 import VibeMatch from "./pages/VibeMatch";
@@ -19,10 +21,15 @@ import { InstallPrompt } from "./components/pwa/InstallPrompt";
 
 const queryClient = new QueryClient();
 
-const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <WalletProviderWrapper>
-    <TooltipProvider>
+const AppContent = () => {
+  const { isOnboardingComplete, completeOnboarding } = useOnboarding();
+
+  if (!isOnboardingComplete) {
+    return <OnboardingFlow onComplete={completeOnboarding} />;
+  }
+
+  return (
+    <>
       <Toaster />
       <Sonner />
       <InstallPrompt />
@@ -41,7 +48,16 @@ const App = () => (
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
-    </TooltipProvider>
+    </>
+  );
+};
+
+const App = () => (
+  <QueryClientProvider client={queryClient}>
+    <WalletProviderWrapper>
+      <TooltipProvider>
+        <AppContent />
+      </TooltipProvider>
     </WalletProviderWrapper>
   </QueryClientProvider>
 );
