@@ -75,7 +75,7 @@ Deno.serve(async (req) => {
       // All non-bot users
       const { data: users } = await supabase
         .from("profiles")
-        .select("id, username, wallet_address, vibe_score, last_seen, is_online, created_at")
+        .select("id, username, wallet_address, vibe_score, last_seen, is_online, created_at, real_name, display_name, country, city, x_handle, instagram_handle, bio_text, tapestry_id, games_played, games_won, avatar_url, find_score, hide_score, hunter_points, hunted_points")
         .eq("is_bot", false)
         .order("created_at", { ascending: false });
 

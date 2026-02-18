@@ -129,7 +129,7 @@ const ChatZone = ({ timeLeft, messages, clueDrops, onSendMessage, disabled, isTy
 
       {/* Chat input */}
       {onSendMessage && (
-        <div className="border-t border-border/50 p-3">
+        <div className="border-t border-border/50 p-3 shrink-0">
           <div className="flex gap-2">
             <Input
               value={inputValue}
@@ -137,14 +137,16 @@ const ChatZone = ({ timeLeft, messages, clueDrops, onSendMessage, disabled, isTy
               onKeyDown={handleKeyDown}
               placeholder="Type a message..."
               disabled={disabled}
-              className="h-8 flex-1 border-border/30 bg-background/50 font-mono text-xs placeholder:text-muted-foreground/50"
+              autoComplete="off"
+              autoCorrect="off"
+              className="h-10 flex-1 border-border/30 bg-background/50 font-mono text-base placeholder:text-muted-foreground/50"
             />
             <button
               onClick={handleSend}
               disabled={disabled || !inputValue.trim()}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-opacity disabled:opacity-30 hover:opacity-90"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-opacity disabled:opacity-30 hover:opacity-90"
             >
-              <Send className="h-3.5 w-3.5" />
+              <Send className="h-4 w-4" />
             </button>
           </div>
         </div>
