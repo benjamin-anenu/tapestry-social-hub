@@ -227,7 +227,7 @@ const VibeMatch = () => {
   }, [sessionId, walletAddress, isBot]);
 
   return (
-    <div className="relative flex h-[100dvh] flex-col items-center bg-background grid-bg overflow-hidden scanlines">
+    <div className="fixed inset-0 flex flex-col items-center bg-background grid-bg overflow-hidden scanlines">
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute -top-40 left-1/2 h-[600px] w-[600px] -translate-x-1/2 rounded-full bg-primary/5 blur-[150px]" />
       </div>
