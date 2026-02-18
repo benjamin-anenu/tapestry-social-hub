@@ -12,6 +12,7 @@ import FriendChat from "./pages/FriendChat";
 import Arena from "./pages/Arena";
 import Demo from "./pages/Demo";
 import Leaderboard from "./pages/Leaderboard";
+import Admin from "./pages/Admin";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -32,6 +33,7 @@ const App = () => (
           <Route path="/play/arena" element={<Arena />} />
           <Route path="/demo" element={<Demo />} />
           <Route path="/leaderboard" element={<Leaderboard />} />
+          <Route path="/admin" element={<Admin />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
