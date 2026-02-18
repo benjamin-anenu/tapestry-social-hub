@@ -228,7 +228,7 @@ const FriendChat = () => {
   }
 
   return (
-    <div className="flex h-screen flex-col bg-background">
+    <div className="flex h-[100dvh] flex-col bg-background">
       {/* Header */}
       <div className="flex items-center gap-3 border-b border-border/50 bg-card/80 px-4 py-3 backdrop-blur-sm">
         <Button variant="ghost" size="icon" onClick={() => navigate("/play/friends")} className="shrink-0">
