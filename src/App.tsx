@@ -13,7 +13,9 @@ import Arena from "./pages/Arena";
 import Demo from "./pages/Demo";
 import Leaderboard from "./pages/Leaderboard";
 import Admin from "./pages/Admin";
+import Install from "./pages/Install";
 import NotFound from "./pages/NotFound";
+import { InstallPrompt } from "./components/pwa/InstallPrompt";
 
 const queryClient = new QueryClient();
 
@@ -23,6 +25,7 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
+      <InstallPrompt />
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Index />} />
@@ -34,6 +37,7 @@ const App = () => (
           <Route path="/demo" element={<Demo />} />
           <Route path="/leaderboard" element={<Leaderboard />} />
           <Route path="/admin" element={<Admin />} />
+          <Route path="/install" element={<Install />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
