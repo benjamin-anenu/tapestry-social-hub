@@ -7,16 +7,16 @@ const corsHeaders = {
 
 const BOT_WALLET = "BOT_AMARA_001";
 
-const VERDICT_SYSTEM_PROMPT = `You are evaluating a 60-second chat conversation as Amara Femilade, a 25-year-old Nigerian woman from Lagos. 
+const VERDICT_SYSTEM_PROMPT = `You are evaluating a 60-second chat conversation as Amara Femilade, a 25-year-old Nigerian woman from Lagos. You speak proper English with a soft Nigerian touch — warm, educated, confident.
 
 Based on the conversation transcript provided, decide: would you genuinely want to connect with this person?
 
-SCORING CRITERIA (Nigerian social standards):
-1. Authenticity — Were they real or were they forming? (pretending)
-2. Conversational effort — Did they actually try or just give one-word answers?
+SCORING CRITERIA:
+1. Authenticity — Were they genuine or were they putting on a show?
+2. Conversational effort — Did they actually try or just give bare minimum responses?
 3. Curiosity — Did they ask about you, or was it all about them?
-4. Humor/Warmth — Could you laugh with this person?
-5. Respect — Were they respectful and not creepy?
+4. Humor/Warmth — Could you actually enjoy talking to this person?
+5. Respect — Were they respectful?
 
 CRITICAL RULES FOR YOUR REASON:
 - You MUST reference specific things the person said or did in the conversation transcript.
@@ -72,7 +72,7 @@ Deno.serve(async (req) => {
 
     // Get Amara's AI verdict
     let botVerdict: "vibe" | "nah" = "nah";
-    let botReason = "She didn't say much about it.";
+    let botReason = "The conversation didn't quite flow the way I hoped. Maybe next time sha!";
 
     try {
       const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
@@ -113,7 +113,7 @@ Deno.serve(async (req) => {
                     },
                     reason: {
                       type: "string",
-                      description: "Amara's reason in her voice, 1-2 sentences with Nigerian flavor. Written as if speaking directly to the person. MUST reference specific things from the conversation transcript. Never fabricate claims about what happened.",
+                      description: "Amara's reason in her voice — proper English with soft Nigerian flavor, 1-2 sentences. Written as if speaking directly to the person. MUST reference specific things from the conversation transcript. Never fabricate claims about what happened.",
                     },
                   },
                   required: ["verdict", "reason"],
@@ -140,12 +140,11 @@ Deno.serve(async (req) => {
       }
     } catch (aiErr) {
       console.error("AI verdict failed:", aiErr);
-      // Default to nah with generic reason
       botVerdict = "nah";
-      botReason = "Hmm, the conversation didn't quite flow the way I hoped. Maybe next time sha!";
+      botReason = "The conversation didn't quite flow the way I hoped. Maybe next time sha!";
     }
 
-    // Submit Amara's verdict (she's always user_b since user is always user_a)
+    // Submit Amara's verdict
     const botField = isA ? "user_b_verdict" : "user_a_verdict";
     await supabase
       .from("vibe_sessions")
@@ -162,7 +161,6 @@ Deno.serve(async (req) => {
       .eq("id", sessionId);
 
     if (mutual) {
-      // Create mutual friendship
       const botProfileId = isA ? session.user_b_id : session.user_a_id;
 
       await supabase.from("friendships").insert([
@@ -170,7 +168,6 @@ Deno.serve(async (req) => {
         { follower_id: botProfileId, following_id: profile.id, mutual: true },
       ]);
 
-      // Create conversation linked to this vibe session
       const [pA, pB] = [profile.id, botProfileId].sort();
       await supabase.from("conversations").upsert(
         { participant_a: pA, participant_b: pB, vibe_session_id: sessionId },

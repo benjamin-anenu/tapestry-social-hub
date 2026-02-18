@@ -469,6 +469,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      increment_vibe_score: { Args: { profile_id: string }; Returns: undefined }
       is_mutual_friend: {
         Args: { _profile_a: string; _profile_b: string }
         Returns: boolean

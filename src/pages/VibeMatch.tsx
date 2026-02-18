@@ -40,6 +40,30 @@ const VibeMatch = () => {
   const nudgeSentCount = useRef<number>(0);
   const submittingVerdict = useRef(false);
 
+  // === HEARTBEAT: Update presence every 30 seconds ===
+  useEffect(() => {
+    if (!walletAddress) return;
+
+    // Send initial heartbeat
+    supabase.functions.invoke("vibe-match-heartbeat", {
+      body: { walletAddress },
+    });
+
+    const interval = setInterval(() => {
+      supabase.functions.invoke("vibe-match-heartbeat", {
+        body: { walletAddress },
+      });
+    }, 30000);
+
+    // Mark offline on unmount
+    return () => {
+      clearInterval(interval);
+      supabase.functions.invoke("vibe-match-heartbeat", {
+        body: { walletAddress, offline: true },
+      });
+    };
+  }, [walletAddress]);
+
   // Proactive nudge: if user is silent 15+ seconds during bot chat
   useEffect(() => {
     if (!isBot || phase !== "chatting" || !sessionId || !walletAddress) return;
@@ -114,33 +138,31 @@ const VibeMatch = () => {
     return () => { cancelled = true; };
   }, [walletAddress]);
 
-  // Subscribe to chat updates via Realtime — only for human matches
+  // === POLLING for human chat updates (every 2 seconds) ===
   useEffect(() => {
-    if (!sessionId || isBot) return;
+    if (!sessionId || isBot || phase !== "chatting" || !walletAddress) return;
 
-    const channel = supabase
-      .channel(`vibe-${sessionId}`)
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "vibe_sessions", filter: `id=eq.${sessionId}` },
-        (payload) => {
-          const row = payload.new as Record<string, unknown>;
-          if (Array.isArray(row.chat_log)) {
-            setMessages(
-              (row.chat_log as Array<{ sender: string; text: string; time: number }>).map((m) => ({
-                time: m.time,
-                sender: m.sender === walletAddress ? "you" : "them",
-                text: m.text,
-              }))
-            );
-            setIsTyping(false);
-          }
+    const interval = setInterval(async () => {
+      try {
+        const { data } = await supabase.functions.invoke("vibe-chat", {
+          body: { sessionId, walletAddress },
+        });
+        if (data?.chatLog && Array.isArray(data.chatLog)) {
+          setMessages(
+            data.chatLog.map((m: { sender: string; text: string; time: number }) => ({
+              time: m.time,
+              sender: m.sender === walletAddress ? "you" : "them",
+              text: m.text,
+            }))
+          );
         }
-      )
-      .subscribe();
+      } catch {
+        // Silently ignore polling errors
+      }
+    }, 2000);
 
-    return () => { supabase.removeChannel(channel); };
-  }, [sessionId, walletAddress, isBot]);
+    return () => clearInterval(interval);
+  }, [sessionId, isBot, phase, walletAddress]);
 
   const handleSendMessage = useCallback(async (text: string) => {
     if (!sessionId || !walletAddress) return;
@@ -167,6 +189,11 @@ const VibeMatch = () => {
         setIsTyping(false);
       }
     } else {
+      // Optimistically add user message for human chat too
+      setMessages((prev) => [
+        ...prev,
+        { time: Date.now(), sender: "you", text },
+      ]);
       await supabase.functions.invoke("vibe-chat", {
         body: { sessionId, walletAddress, text },
       });

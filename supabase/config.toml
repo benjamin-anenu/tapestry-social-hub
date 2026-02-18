@@ -29,3 +29,6 @@ verify_jwt = false
 
 [functions.direct-chat]
 verify_jwt = false
+
+[functions.vibe-match-heartbeat]
+verify_jwt = false
