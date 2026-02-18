@@ -104,6 +104,27 @@ Deno.serve(async (req) => {
       });
     }
 
+    if (action === "delete_user") {
+      if (!value) throw new Error("User profile id required");
+
+      // Delete related records first (foreign key dependencies)
+      await supabase.from("direct_messages").delete().or(`sender_id.eq.${value},receiver_id.eq.${value}`);
+      await supabase.from("conversations").delete().or(`participant_a.eq.${value},participant_b.eq.${value}`);
+      await supabase.from("friendships").delete().or(`follower_id.eq.${value},following_id.eq.${value}`);
+      await supabase.from("puzzle_templates").delete().eq("profile_id", value);
+      await supabase.from("vibe_sessions").delete().or(`user_a_id.eq.${value},user_b_id.eq.${value}`);
+      await supabase.from("matchmaking_queue").delete().eq("profile_id", value);
+      await supabase.from("games").delete().or(`hunter_id.eq.${value},hunted_id.eq.${value}`);
+      
+      // Finally delete the profile
+      const { error: delErr } = await supabase.from("profiles").delete().eq("id", value);
+      if (delErr) throw new Error(delErr.message);
+
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     throw new Error("Unknown action");
   } catch (err) {
     return new Response(JSON.stringify({ error: err.message }), {
