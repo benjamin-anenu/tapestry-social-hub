@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useWallet } from "@solana/wallet-adapter-react";
-import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
+import MobileWalletConnect from "@/components/play/MobileWalletConnect";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, Loader2, ArrowRight, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -61,7 +61,7 @@ const Play = () => {
               <p className="font-mono text-sm text-muted-foreground leading-relaxed">
                 Connect your Phantom or Solflare wallet to play for real on devnet.
               </p>
-              <WalletMultiButton />
+              <MobileWalletConnect />
             </motion.div>
           )}
 
