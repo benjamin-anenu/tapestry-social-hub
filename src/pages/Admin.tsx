@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import { useNavigate } from "react-router-dom";
@@ -13,20 +13,37 @@ import {
 import { Users, Activity, Zap, Settings, ArrowLeft, ShieldAlert, Loader2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
+interface UserProfile {
+  id: string;
+  username: string | null;
+  wallet_address: string;
+  vibe_score: number | null;
+  last_seen: string | null;
+  is_online: boolean;
+  created_at: string;
+  real_name: string | null;
+  display_name: string | null;
+  country: string | null;
+  city: string | null;
+  x_handle: string | null;
+  instagram_handle: string | null;
+  bio_text: string | null;
+  tapestry_id: string | null;
+  games_played: number | null;
+  games_won: number | null;
+  avatar_url: string | null;
+  find_score: number | null;
+  hide_score: number | null;
+  hunter_points: number | null;
+  hunted_points: number | null;
+}
+
 interface DashboardData {
   totalUsers: number;
   vibedUsers: number;
   activeSessions: number;
   matchingMode: string;
-  users: Array<{
-    id: string;
-    username: string | null;
-    wallet_address: string;
-    vibe_score: number | null;
-    last_seen: string | null;
-    is_online: boolean;
-    created_at: string;
-  }>;
+  users: UserProfile[];
 }
 
 const Admin = () => {
@@ -36,6 +53,7 @@ const Admin = () => {
   const [authorized, setAuthorized] = useState(false);
   const [data, setData] = useState<DashboardData | null>(null);
   const [savingMode, setSavingMode] = useState(false);
+  const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
 
   const walletAddress = publicKey?.toBase58() ?? null;
 
@@ -218,19 +236,59 @@ const Admin = () => {
               </TableHeader>
               <TableBody>
                 {(data?.users ?? []).map((user) => (
-                  <TableRow key={user.id} className="border-primary/5">
-                    <TableCell className="font-mono text-sm">{user.username ?? "—"}</TableCell>
-                    <TableCell className="font-mono text-xs text-muted-foreground">
-                      {user.wallet_address.slice(0, 6)}...{user.wallet_address.slice(-4)}
-                    </TableCell>
-                    <TableCell className="font-mono text-sm">{user.vibe_score ?? 0}</TableCell>
-                    <TableCell className="font-mono text-xs text-muted-foreground">
-                      {user.last_seen ? new Date(user.last_seen).toLocaleString() : "—"}
-                    </TableCell>
-                    <TableCell>
-                      <span className={`inline-block w-2 h-2 rounded-full ${user.is_online ? "bg-green-500" : "bg-muted-foreground/30"}`} />
-                    </TableCell>
-                  </TableRow>
+                  <React.Fragment key={user.id}>
+                    <TableRow
+                      className="border-primary/5 cursor-pointer hover:bg-primary/5 transition-colors"
+                      onClick={() => setExpandedUserId(expandedUserId === user.id ? null : user.id)}
+                    >
+                      <TableCell className="font-mono text-sm">{user.username ?? "—"}</TableCell>
+                      <TableCell className="font-mono text-xs text-muted-foreground">
+                        {user.wallet_address.slice(0, 6)}...{user.wallet_address.slice(-4)}
+                      </TableCell>
+                      <TableCell className="font-mono text-sm">{user.vibe_score ?? 0}</TableCell>
+                      <TableCell className="font-mono text-xs text-muted-foreground">
+                        {user.last_seen ? new Date(user.last_seen).toLocaleString() : "—"}
+                      </TableCell>
+                      <TableCell>
+                        <span className={`inline-block w-2 h-2 rounded-full ${user.is_online ? "bg-green-500" : "bg-muted-foreground/30"}`} />
+                      </TableCell>
+                    </TableRow>
+                    {expandedUserId === user.id && (
+                      <TableRow className="border-primary/5 bg-primary/5">
+                        <TableCell colSpan={5} className="p-4">
+                          <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-3 font-mono text-xs">
+                            {[
+                              ["Display Name", user.display_name],
+                              ["Real Name", user.real_name],
+                              ["Country", user.country],
+                              ["City", user.city],
+                              ["X Handle", user.x_handle ? `@${user.x_handle}` : null],
+                              ["Instagram", user.instagram_handle ? `@${user.instagram_handle}` : null],
+                              ["Tapestry ID", user.tapestry_id],
+                              ["Games Played", user.games_played],
+                              ["Games Won", user.games_won],
+                              ["Find Score", user.find_score],
+                              ["Hide Score", user.hide_score],
+                              ["Hunter Pts", user.hunter_points],
+                              ["Hunted Pts", user.hunted_points],
+                              ["Joined", new Date(user.created_at).toLocaleDateString()],
+                            ].map(([label, val]) => (
+                              <div key={label as string}>
+                                <span className="text-muted-foreground">{label as string}</span>
+                                <p className="text-foreground mt-0.5">{val ?? "—"}</p>
+                              </div>
+                            ))}
+                            {user.bio_text && (
+                              <div className="col-span-2 md:col-span-3">
+                                <span className="text-muted-foreground">Bio</span>
+                                <p className="text-foreground mt-0.5">{user.bio_text}</p>
+                              </div>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </React.Fragment>
                 ))}
                 {(data?.users ?? []).length === 0 && (
                   <TableRow>
