@@ -9,6 +9,7 @@ const corsHeaders = {
 
 const TAPESTRY_API = "https://api.usetapestry.dev/api/v1";
 const NAMESPACE = "vibe";
+const LEGACY_NAMESPACE = "find";
 
 // Helper: find all profiles linked to a wallet address
 async function getProfilesByWallet(apiKey: string, walletAddress: string) {
@@ -105,7 +106,8 @@ serve(async (req) => {
             const allProfiles = recoveryData.profiles || recoveryData || [];
             const profilesList = Array.isArray(allProfiles) ? allProfiles : [];
             console.log("Recovery profiles raw:", JSON.stringify(profilesList.slice(0, 2)));
-            const findProfile = profilesList.find((p: any) => getNamespaceName(p.namespace) === NAMESPACE);
+            const findProfile = profilesList.find((p: any) => getNamespaceName(p.namespace) === NAMESPACE)
+              || profilesList.find((p: any) => getNamespaceName(p.namespace) === LEGACY_NAMESPACE);
             if (findProfile) {
               const uname = getProfileUsername(findProfile);
               profile = {
@@ -171,7 +173,8 @@ serve(async (req) => {
         if (profilesList.length > 0) {
           console.log("First profile shape:", JSON.stringify(profilesList[0]));
         }
-        const findProfile = profilesList.find((p: any) => getNamespaceName(p.namespace) === NAMESPACE);
+        const findProfile = profilesList.find((p: any) => getNamespaceName(p.namespace) === NAMESPACE)
+          || profilesList.find((p: any) => getNamespaceName(p.namespace) === LEGACY_NAMESPACE);
 
         if (findProfile) {
           const uname = getProfileUsername(findProfile);
