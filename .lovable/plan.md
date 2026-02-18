@@ -1,138 +1,159 @@
 
 
-## Make Vibe60 a Progressive Web App (PWA)
+## Premium PWA Onboarding Experience
 
-This plan will turn Vibe60 into an installable PWA that users can add to their phone's home screen -- just like a native app. It loads fast, works offline (for cached pages), and shows up with your app icon and splash screen.
+### Overview
 
-### What You'll Get
-
-- An "Install" prompt/button so users can add the app to their home screen
-- A custom app icon and splash screen when launching
-- Fullscreen, standalone experience (no browser chrome)
-- Offline fallback page when there's no internet
-- The app can later be packaged for Google Play / Microsoft Store / iOS App Store using PWABuilder.com
+Build a 5-screen onboarding flow that appears on first app launch (tracked via `localStorage`). Each screen tells a chapter of the Vibe60 story from a Web3 perspective, with AI-generated 3D hyper-realistic hero images, smooth swipe/tap navigation, and responsive design for all PWA screen sizes.
 
 ---
 
-### Step 1: Install the Vite PWA Plugin
+### The 5 Screens (Story Arc)
 
-Add the `vite-plugin-pwa` package, which handles generating the service worker and web manifest automatically during the build.
+**Screen 1: "Your Vibe, On-Chain"**
+- Hero image: A luminous digital identity crystal floating in deep space, connected by glowing neural threads to a Solana blockchain constellation
+- Copy: Introduces the concept -- your social identity lives on-chain via Tapestry on Solana. Portable, permanent, yours.
+- Key message: "Connect your wallet. Own your identity."
 
-### Step 2: Configure PWA in `vite.config.ts`
+**Screen 2: "60 Seconds to Connect"**
+- Hero image: Two holographic avatars facing each other across a neon-lit arena, a 60-second timer orbiting between them like a ring of light
+- Copy: Explains the core Vibe Match mechanic -- get matched with a stranger, chat for 60 seconds, decide if you vibe.
+- Key message: "One minute. Real conversations. No algorithms."
 
-Add the `VitePWA` plugin with the following configuration:
+**Screen 3: "The Vibe Check"**
+- Hero image: A dramatic split-screen moment -- two hands reaching toward each other through a portal of electric blue and neon green energy, symbolizing mutual reveal
+- Copy: If both say "Vibe" -- real names, socials, and profiles unlock. No match? Nothing shared. Privacy by design.
+- Key message: "Mutual consent unlocks real connections."
 
-- **registerType: "autoUpdate"** -- the service worker updates automatically in the background
-- **includeAssets** -- precache the favicon and placeholder image
-- **manifest** -- the web app manifest with:
-  - `name`: "Vibe60 -- The Most Interesting Minute of Your Day"
-  - `short_name`: "Vibe60"
-  - `description`: The app tagline
-  - `theme_color`: "#0a0f1a" (matches the dark background)
-  - `background_color`: "#0a0f1a"
-  - `display`: "standalone" (no browser UI)
-  - `scope`: "/"
-  - `start_url`: "/"
-  - `icons`: Array of PNG icons at 192x192 and 512x512 sizes
-- **workbox.navigateFallbackDenylist** -- exclude `/~oauth` from the service worker cache (required for auth redirects to work)
+**Screen 4: "Build Your Circle"**
+- Hero image: A futuristic social graph visualization -- interconnected nodes of friends orbiting a central profile, each connection glowing with on-chain verification badges
+- Copy: Your friends live on Tapestry's open social graph. Portable across every app in the ecosystem. Your circle grows with every vibe.
+- Key message: "Friends on-chain. Portable everywhere."
 
-### Step 3: Create PWA Icons
-
-Create two icon files in `public/`:
-- `pwa-192x192.png` (192x192)
-- `pwa-512x512.png` (512x512)
-
-These will be SVG-based icons with the Vibe60 branding (electric blue/neon green on dark background with "V60" text). For production, you should replace these with proper designed PNG icons.
-
-### Step 4: Create an Offline Fallback Page
-
-Create `public/offline.html` -- a simple styled page that shows when the user is offline and tries to access a page that isn't cached. Matches the Vibe60 dark theme.
-
-### Step 5: Update `index.html` with PWA Meta Tags
-
-Add to the `<head>`:
-- `<meta name="theme-color" content="#0a0f1a">` -- sets the browser/status bar color
-- `<link rel="apple-touch-icon" href="/pwa-192x192.png">` -- iOS home screen icon
-- `<link rel="manifest" href="/manifest.webmanifest">` -- link to the generated manifest (vite-plugin-pwa generates this, but adding the link ensures compatibility)
-
-### Step 6: Create an Install Prompt Component
-
-Build a `src/components/pwa/InstallPrompt.tsx` component that:
-- Listens for the browser's `beforeinstallprompt` event
-- Shows a styled banner/button inviting the user to install the app
-- On iOS (where `beforeinstallprompt` isn't supported), shows instructions: "Tap Share then Add to Home Screen"
-- Dismisses after the user installs or closes the prompt
-- Saves dismissal to localStorage so it doesn't keep reappearing
-
-### Step 7: Add Install Prompt to the App
-
-Import and render `<InstallPrompt />` in `src/App.tsx` so it appears on all pages.
-
-### Step 8: Create a Dedicated `/install` Page
-
-Create `src/pages/Install.tsx` with:
-- Step-by-step visual instructions for installing on iOS and Android
-- A manual "Install" button that triggers the install prompt
-- Links to explain what a PWA is
-- Add the route to `App.tsx`
+**Screen 5: "Game On"**
+- Hero image: An epic arena scene -- friends facing off in a staked game, SOL tokens floating in the air, a leaderboard hologram rising behind them
+- Copy: Challenge your circle to staked games. Climb the ranks. Earn together. The Game Arena is where vibes become victories.
+- Key message: "Play with friends. Win together."
 
 ---
 
-### After Implementation: Publishing to App Stores (Optional Future Step)
+### Architecture
 
-Once the PWA is live at `find60.lovable.app`, you can use **PWABuilder.com** to package it:
+**New files:**
+1. `src/components/onboarding/OnboardingFlow.tsx` -- Main container with state management, swipe navigation, and screen transitions
+2. `src/components/onboarding/OnboardingScreen.tsx` -- Reusable screen component (image, title, subtitle, body, indicators, CTA)
+3. `src/components/onboarding/onboardingData.ts` -- Screen content data (titles, descriptions, image references)
+4. `supabase/functions/generate-onboarding-images/index.ts` -- Edge function to generate 3D hyper-realistic images using Lovable AI (Gemini image model)
+5. `src/hooks/useOnboarding.ts` -- Hook to check/set onboarding completion state
 
-1. Go to pwabuilder.com and enter `https://find60.lovable.app`
-2. PWABuilder validates your manifest, service worker, and security
-3. Click "Package" and choose your target: Google Play, Microsoft Store, or iOS App Store
-4. Download the package and submit to the respective store
-
-This requires developer accounts ($25 one-time for Google Play, $19 for Microsoft, $99/year for Apple).
+**Modified files:**
+1. `src/App.tsx` -- Wrap the router with onboarding gate logic
 
 ---
 
-### Technical Details
+### Technical Implementation
 
-**Files to create:**
-1. `public/pwa-192x192.png` -- App icon (192x192)
-2. `public/pwa-512x512.png` -- App icon (512x512)
-3. `public/offline.html` -- Offline fallback page
-4. `src/components/pwa/InstallPrompt.tsx` -- Install prompt component
-5. `src/pages/Install.tsx` -- Dedicated install page
+**Onboarding Gate (App.tsx):**
+- Check `localStorage` for `vibe60-onboarding-complete`
+- If not found, render `<OnboardingFlow />` instead of the router
+- On completion, set the flag and render the normal app
 
-**Files to modify:**
-1. `vite.config.ts` -- Add VitePWA plugin configuration
-2. `index.html` -- Add PWA meta tags (theme-color, apple-touch-icon)
-3. `src/App.tsx` -- Add InstallPrompt component and /install route
+**OnboardingFlow Component:**
+- Uses `useState` for current screen index (0-4)
+- Framer Motion `AnimatePresence` for screen transitions (fade + slide)
+- Touch swipe detection via pointer events (swipe left = next, swipe right = prev)
+- Dot indicators showing progress
+- "Skip" button on screens 1-4
+- "Get Started" CTA on the final screen
+- Responsive: full `h-[100dvh]` layout, image scales proportionally, text adjusts for mobile/tablet/desktop
 
-**Dependencies to install:**
-- `vite-plugin-pwa`
+**Image Generation:**
+- Create an edge function that calls the Lovable AI image generation endpoint (`google/gemini-3-pro-image-preview` for highest quality)
+- Generate 5 images with detailed prompts matching each screen's story
+- Upload generated images to a Lovable Cloud storage bucket
+- The onboarding component loads images from the storage bucket URLs
+- Fallback: If images haven't been generated yet, show a gradient placeholder with the screen's icon
 
-**Key config snippet (vite.config.ts):**
-```typescript
-import { VitePWA } from 'vite-plugin-pwa';
+**Responsive Design (all PWA sizes):**
+- Mobile (320-414px): Image takes ~45% height, text below with larger touch targets
+- Tablet (768-1024px): Image takes ~50% height, centered layout with more whitespace
+- Desktop (1024px+): Side-by-side layout option or centered with max-width constraint
+- All use `100dvh` for proper keyboard/notch handling
+- Safe area padding for notched devices (`env(safe-area-inset-*)`)
 
-plugins: [
-  react(),
-  VitePWA({
-    registerType: 'autoUpdate',
-    includeAssets: ['favicon.ico', 'pwa-192x192.png', 'pwa-512x512.png'],
-    workbox: {
-      navigateFallbackDenylist: [/^\/~oauth/],
-    },
-    manifest: {
-      name: 'Vibe60 — The Most Interesting Minute of Your Day',
-      short_name: 'Vibe60',
-      theme_color: '#0a0f1a',
-      background_color: '#0a0f1a',
-      display: 'standalone',
-      start_url: '/',
-      icons: [
-        { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' },
-        { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
-      ],
-    },
-  }),
-]
+**Screen Component Layout:**
+```text
++----------------------------------+
+|         [Skip]          (1/5)    |
+|                                  |
+|     +----------------------+     |
+|     |                      |     |
+|     |    3D Hero Image     |     |
+|     |    (aspect 16:10)    |     |
+|     |                      |     |
+|     +----------------------+     |
+|                                  |
+|     SCREEN TITLE                 |
+|     Subtitle / tagline           |
+|                                  |
+|     Body paragraph text          |
+|     explaining the feature       |
+|                                  |
+|        o  o  [o]  o  o           |
+|                                  |
+|     [    Next / Get Started  ]   |
++----------------------------------+
 ```
+
+**Swipe Navigation:**
+- Track `onPointerDown` / `onPointerUp` x-coordinates
+- If delta > 50px left, advance; if delta > 50px right, go back
+- Keyboard: ArrowLeft/ArrowRight support for desktop
+
+**Storage Bucket:**
+- Create a `onboarding-images` storage bucket (public read)
+- Store generated images as `screen-1.png` through `screen-5.png`
+
+**Edge Function (generate-onboarding-images):**
+- POST endpoint, admin-only (checks for a simple secret or admin auth)
+- Calls Lovable AI with `google/gemini-3-pro-image-preview` model and `modalities: ["image", "text"]`
+- Detailed prompts for each screen specifying: 3D hyper-realism, dark background matching the app's `#0a0f1a` theme, electric blue and neon green accent colors, cinematic lighting
+- Uploads each result to the storage bucket
+- Returns the public URLs
+
+**localStorage Key:** `vibe60-onboarding-complete` = `"true"`
+
+---
+
+### Edge Cases Handled
+
+- **Returning users**: localStorage check skips onboarding entirely
+- **Cleared storage**: User sees onboarding again (acceptable -- it's a brief, informative experience)
+- **Slow image loading**: Skeleton shimmer placeholder while images load; gradient fallback if fetch fails
+- **Screen rotation**: `100dvh` + flex layout adapts automatically
+- **Accessibility**: All images have descriptive alt text; dot indicators have aria-labels; keyboard navigation supported
+- **PWA standalone mode**: Works identically whether opened in browser or as installed PWA
+- **No network**: If images fail to load from storage, show styled gradient placeholders with Lucide icons (graceful degradation)
+
+---
+
+### Database Changes
+
+**New storage bucket:**
+- `onboarding-images` (public read, admin write)
+- RLS: Public SELECT, authenticated INSERT/UPDATE/DELETE restricted to service role
+
+---
+
+### Implementation Order
+
+1. Create the `useOnboarding` hook (localStorage check)
+2. Create `onboardingData.ts` with screen content
+3. Build `OnboardingScreen.tsx` (single screen component)
+4. Build `OnboardingFlow.tsx` (navigation, swipe, transitions)
+5. Gate `App.tsx` with onboarding check
+6. Create storage bucket for images
+7. Build and deploy the image generation edge function
+8. Generate the 5 images and upload to storage
+9. Connect the onboarding screens to the stored image URLs
 
