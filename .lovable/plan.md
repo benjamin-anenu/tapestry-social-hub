@@ -1,63 +1,67 @@
 
 
-## Two Improvements
+## Rebrand Find60 to Vibe60 + Fix Missing Profile Data
 
-### 1. Admin Portal: Expanded User Details
+### Part 1: Rebrand to Vibe60
 
-**Problem**: The user table only shows username, wallet, vibe score, last seen, and online status. You want to see all user information.
+All references to "Find60" / "FIND" / "find60" will be updated to "Vibe60" / "VIBE" / "vibe60" across the platform, **excluding the demo area** (Demo.tsx and all src/components/demo/* files).
 
-**Solution**: Add an expandable row detail panel. Click any user row to reveal their full profile: real name, country, city, X handle, Instagram handle, bio, display name, tapestry ID, games played/won, and registration date.
+**Files to update:**
 
-**Changes**:
+| File | What changes |
+|------|-------------|
+| `src/pages/Index.tsx` | "FIND" -> "VIBE", "Find your people" -> "Vibe with your people", "Find60" references |
+| `src/pages/Leaderboard.tsx` | "Find60" -> "Vibe60" in description |
+| `src/pages/Admin.tsx` | "Find Score" label -> "Vibe Score" (display label only) |
+| `src/components/play/IdentityCard.tsx` | Filter namespace from `"find60"` to `"vibe60"` |
+| `src/index.css` | Comment "Find60 Dark-first brand" -> "Vibe60 Dark-first brand" |
+| `src/lib/mock-data.ts` | "Find60" -> "Vibe60" in MOCK_REPUTATION |
+| `src/components/play/PlayLobby.tsx` | "Find Match" button text -> "Find Vibe" or "Start Vibe" |
+| `index.html` | Page title updated to "Vibe60" |
+| `supabase/functions/tapestry-identity/index.ts` | NAMESPACE `"find"` -> `"vibe"` |
+| `supabase/functions/bot-gameplay/index.ts` | "Find60" -> "Vibe60" in system prompt |
+| `supabase/functions/player-chat/index.ts` | "Find60" -> "Vibe60" in system prompt |
 
-- **`supabase/functions/admin-api/index.ts`**: Expand the `select` query on profiles to include all columns: `real_name`, `display_name`, `country`, `city`, `x_handle`, `instagram_handle`, `bio_text`, `tapestry_id`, `games_played`, `games_won`, `avatar_url`, `find_score`, `hide_score`.
+**Not changed:** `src/pages/Demo.tsx`, `src/components/demo/*` -- left as-is per your request.
 
-- **`src/pages/Admin.tsx`**:
-  - Update the `DashboardData` user interface to include all new fields.
-  - Add `expandedUserId` state to track which row is expanded.
-  - Make each table row clickable — clicking toggles a detail panel below that row.
-  - The detail panel shows a two-column grid of all profile fields: real name, display name, country/city, X handle, Instagram handle, bio, tapestry ID, games played, games won, find/hide scores, and joined date.
-  - Fields that are null show a dash.
+**Note on Tapestry namespace:** Changing from `"find"` to `"vibe"` means new profiles will be created under the new namespace. Existing profiles created under `"find"` will no longer be auto-detected on login. If you want existing users to keep working, we can keep the namespace as `"find"` internally and only change the display name. Let me know if that matters, otherwise I'll change it.
 
-### 2. Mobile Vibe Chat: Fix Keyboard UX
+---
 
-**Problem**: On mobile, when the keyboard opens it pushes the chat content up and sometimes triggers zoom, making the experience unusable. Users have to dismiss the keyboard just to press send.
+### Part 2: Fix Missing Profile Fields (display_name, real_name, country, city, etc.)
 
-**Root causes**:
-- The page uses `min-h-screen` which fights with mobile viewport resizing when the keyboard appears.
-- The chat container has a fixed pixel height (`h-[350px]`) that doesn't adapt.
-- The input field font size is too small (`text-xs` = 12px), which triggers iOS auto-zoom on inputs under 16px.
-- No `dvh` (dynamic viewport height) usage, so the layout doesn't respond to keyboard appearance.
+**Root cause:** When a user creates their profile in `CreateTapestryProfile.tsx`, the component tries to save extended fields (real_name, country, x_handle, instagram_handle, bio_text) by calling `supabase.from("profiles").update(...)` directly from the browser. However, the RLS policy on `profiles` requires `auth.uid() = user_id` for updates. Since users authenticate via Solana wallet (not email/password), there is no active auth session, so the update **silently fails** -- the data is never saved.
 
-**Solution**: Restructure the vibe chat layout to use `dvh` units and a flex column that naturally adapts when the mobile keyboard appears, and fix the zoom trigger.
+**Fix:** Move the profile field update into the `tapestry-identity` edge function, which runs with the service role key (bypasses RLS). The frontend will pass the extra fields (real_name, country, x_handle, instagram_handle, bio_text) to the edge function during profile creation, and the function will update the `profiles` table server-side.
 
-**Changes**:
+**Changes:**
 
-- **`src/pages/VibeMatch.tsx`** (chatting phase layout):
-  - Change outer container from `min-h-screen` to `h-[100dvh]` with `overflow-hidden` to lock the viewport.
-  - Remove the fixed `h-[350px]` on the chat container — let it flex-fill the available space using `flex-1 min-h-0`.
-  - This way, when the keyboard opens, the browser shrinks `dvh` and the chat naturally compresses without pushing content off-screen.
+1. **`supabase/functions/tapestry-identity/index.ts`**
+   - Accept new optional fields in the request body: `realName`, `country`, `xHandle`, `instagramHandle`, `bioText`
+   - After creating the Tapestry profile, use the service-role Supabase client to update the `profiles` row with these fields
+   - This guarantees the data is saved regardless of RLS
 
-- **`src/components/demo/ChatZone.tsx`** (input area):
-  - Change input font size from `text-xs` to `text-base` (16px) to prevent iOS auto-zoom on focus, but keep it visually compact with appropriate padding.
-  - Add a send-on-enter that works seamlessly (already exists, but ensure the input doesn't blur on send so users can keep typing).
-  - Make the send button larger on mobile (h-10 w-10) for easier tap targets.
-  - Add `autoComplete="off"` and `autoCorrect="off"` attributes to prevent mobile browser interference.
+2. **`src/components/play/CreateTapestryProfile.tsx`**
+   - Pass the extra fields to the edge function call instead of updating profiles directly from the client
+   - Remove the client-side `supabase.from("profiles").update(...)` call since it never worked anyway
 
-- **`src/index.css`** (global mobile fix):
-  - Add a meta viewport override via CSS to ensure `maximum-scale=1` behavior: `@supports` rule with `touch-action: manipulation` on inputs to prevent double-tap zoom.
-  - Add `input { font-size: 16px !important; }` media query for small screens to universally prevent zoom.
+---
 
-- **`index.html`**:
-  - Update the viewport meta tag to include `maximum-scale=1, user-scalable=no` to prevent zoom on input focus (standard for app-like mobile experiences).
+### Technical Details
 
-### Technical Summary
+**tapestry-identity edge function changes:**
+- Import and create a Supabase service-role client
+- In the create-mode branch, after successfully creating the Tapestry profile, run:
+  ```
+  supabase.from("profiles").update({
+    real_name, country, x_handle, instagram_handle, bio_text, display_name
+  }).eq("wallet_address", walletAddress)
+  ```
+- This uses the service role key so RLS is bypassed
 
-| File | Change |
-|------|--------|
-| `supabase/functions/admin-api/index.ts` | Expand profile select to all columns |
-| `src/pages/Admin.tsx` | Add expandable row detail, update types |
-| `src/pages/VibeMatch.tsx` | Use `100dvh`, flex layout, remove fixed height |
-| `src/components/demo/ChatZone.tsx` | Input font 16px, larger send button, mobile-safe attrs |
-| `index.html` | Add `maximum-scale=1, user-scalable=no` to viewport meta |
+**CreateTapestryProfile.tsx changes:**
+- Send `{ walletAddress, username, bio, realName, country, xHandle, instagramHandle }` to the edge function
+- Remove the separate `.update()` call after `onCreated(data)`
+
+**city field:** The `city` column exists in the database but the create profile form doesn't have a city input field. This is why city is always null. Adding a city input is optional -- can be added later if desired.
 
