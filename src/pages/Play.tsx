@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { useTapestryIdentity } from "@/hooks/useTapestryIdentity";
 import IdentityCard from "@/components/play/IdentityCard";
 import CreateTapestryProfile from "@/components/play/CreateTapestryProfile";
+import EditProfileSheet from "@/components/play/EditProfileSheet";
 import MainHub from "@/components/play/MainHub";
 
 type Phase = "connect" | "identity" | "lobby";
@@ -87,6 +88,9 @@ const Play = () => {
               {!loading && !error && hasProfile && activeProfile && (
                 <>
                   <IdentityCard profile={activeProfile} walletAddress={walletAddress} />
+                  <div className="flex items-center gap-3">
+                    <EditProfileSheet walletAddress={walletAddress} />
+                  </div>
                   <Button
                     onClick={() => setPhase("lobby")}
                     className="h-14 w-full max-w-sm rounded-xl font-display text-lg font-bold shadow-lg glow-blue"
