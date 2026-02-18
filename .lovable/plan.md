@@ -1,89 +1,63 @@
 
 
-## Admin Portal for Find60
+## Two Improvements
 
-### What You Get
+### 1. Admin Portal: Expanded User Details
 
-A protected admin dashboard at `/admin` with three sections:
+**Problem**: The user table only shows username, wallet, vibe score, last seen, and online status. You want to see all user information.
 
-1. **Overview Cards** -- Total registered users, users who have completed vibe sessions, currently active sessions, and current matching mode
-2. **User Table** -- Sortable list of all registered (non-bot) users showing username, wallet (truncated), vibe score, last seen, and online status
-3. **Matching Mode Control** -- Toggle between three modes:
-   - **Auto** (current default): Try human matches first, fall back to Amara bot
-   - **Bot Only**: All users match with Amara only
-   - **Human Only**: No bot fallback; users wait or see "no one online"
+**Solution**: Add an expandable row detail panel. Click any user row to reveal their full profile: real name, country, city, X handle, Instagram handle, bio, display name, tapestry ID, games played/won, and registration date.
 
-### Security Model
+**Changes**:
 
-- Admin access is validated **server-side** by checking the connected wallet against an `admin_wallets` table
-- No hardcoded wallet addresses in frontend code
-- All data queries run through a single `admin-api` edge function using the service role key
-- If a non-admin wallet connects, the page shows "Access Denied"
-- The `admin_wallets` table has RLS enabled with no public policies -- only accessible via the edge function
+- **`supabase/functions/admin-api/index.ts`**: Expand the `select` query on profiles to include all columns: `real_name`, `display_name`, `country`, `city`, `x_handle`, `instagram_handle`, `bio_text`, `tapestry_id`, `games_played`, `games_won`, `avatar_url`, `find_score`, `hide_score`.
 
-### Architecture
+- **`src/pages/Admin.tsx`**:
+  - Update the `DashboardData` user interface to include all new fields.
+  - Add `expandedUserId` state to track which row is expanded.
+  - Make each table row clickable — clicking toggles a detail panel below that row.
+  - The detail panel shows a two-column grid of all profile fields: real name, display name, country/city, X handle, Instagram handle, bio, tapestry ID, games played, games won, find/hide scores, and joined date.
+  - Fields that are null show a dash.
 
-```text
-[Admin Page]  -->  [admin-api edge function]  -->  [Database]
-     |                      |
-     |-- sends wallet  --> checks admin_wallets table
-     |                      |
-     |<-- returns data  <-- queries profiles, vibe_sessions, app_settings
-```
+### 2. Mobile Vibe Chat: Fix Keyboard UX
 
-### Database Changes (Migration)
+**Problem**: On mobile, when the keyboard opens it pushes the chat content up and sometimes triggers zoom, making the experience unusable. Users have to dismiss the keyboard just to press send.
 
-1. **`app_settings` table** -- Single-row key-value config store
-   - `key` (text, primary key)
-   - `value` (text)
-   - Seeded with `matching_mode = 'auto'`
-   - RLS enabled, no public policies
+**Root causes**:
+- The page uses `min-h-screen` which fights with mobile viewport resizing when the keyboard appears.
+- The chat container has a fixed pixel height (`h-[350px]`) that doesn't adapt.
+- The input field font size is too small (`text-xs` = 12px), which triggers iOS auto-zoom on inputs under 16px.
+- No `dvh` (dynamic viewport height) usage, so the layout doesn't respond to keyboard appearance.
 
-2. **`admin_wallets` table** -- Authorized admin wallet addresses
-   - `wallet_address` (text, primary key)
-   - `created_at` (timestamptz)
-   - Seeded with your wallet: `46eC9nnfbgqhfF219js3wpHhM28igahTqoYQyumtVLWb`
-   - RLS enabled, no public policies
+**Solution**: Restructure the vibe chat layout to use `dvh` units and a flex column that naturally adapts when the mobile keyboard appears, and fix the zoom trigger.
 
-### Edge Function: `admin-api`
+**Changes**:
 
-Handles all admin operations through a single endpoint:
+- **`src/pages/VibeMatch.tsx`** (chatting phase layout):
+  - Change outer container from `min-h-screen` to `h-[100dvh]` with `overflow-hidden` to lock the viewport.
+  - Remove the fixed `h-[350px]` on the chat container — let it flex-fill the available space using `flex-1 min-h-0`.
+  - This way, when the keyboard opens, the browser shrinks `dvh` and the chat naturally compresses without pushing content off-screen.
 
-- **Action: `dashboard`** -- Returns overview stats (total users, vibed users, active sessions, matching mode) and a list of all registered users
-- **Action: `set_matching_mode`** -- Updates the matching mode setting to `auto`, `bot_only`, or `human_only`
+- **`src/components/demo/ChatZone.tsx`** (input area):
+  - Change input font size from `text-xs` to `text-base` (16px) to prevent iOS auto-zoom on focus, but keep it visually compact with appropriate padding.
+  - Add a send-on-enter that works seamlessly (already exists, but ensure the input doesn't blur on send so users can keep typing).
+  - Make the send button larger on mobile (h-10 w-10) for easier tap targets.
+  - Add `autoComplete="off"` and `autoCorrect="off"` attributes to prevent mobile browser interference.
 
-Validates caller's wallet against `admin_wallets` before any operation. Returns 403 if unauthorized.
+- **`src/index.css`** (global mobile fix):
+  - Add a meta viewport override via CSS to ensure `maximum-scale=1` behavior: `@supports` rule with `touch-action: manipulation` on inputs to prevent double-tap zoom.
+  - Add `input { font-size: 16px !important; }` media query for small screens to universally prevent zoom.
 
-### Matching Mode Integration
+- **`index.html`**:
+  - Update the viewport meta tag to include `maximum-scale=1, user-scalable=no` to prevent zoom on input focus (standard for app-like mobile experiences).
 
-Update `vibe-match` edge function to read `matching_mode` from `app_settings` before matching:
-- `bot_only`: Skip human search entirely, go straight to Amara
-- `human_only`: Skip bot fallback, return "no one online" if no humans
-- `auto`: Current behavior (humans first, bot fallback)
+### Technical Summary
 
-### Frontend: `src/pages/Admin.tsx`
-
-- Same dark cyberpunk theme as rest of app (grid-bg, scanlines, glow effects, font-display/font-mono)
-- On load: sends connected wallet to `admin-api` for validation
-- If not admin: shows "Access Denied" with back button
-- If no wallet connected: prompts to connect wallet
-- Overview cards at top, user table below, settings panel at bottom
-- Matching mode uses radio buttons with immediate save
-
-### Files to Create/Modify
-
-1. **New migration** -- Create `app_settings` and `admin_wallets` tables with seeds
-2. **New:** `supabase/functions/admin-api/index.ts` -- Admin backend function
-3. **New:** `src/pages/Admin.tsx` -- Admin dashboard UI
-4. **Edit:** `src/App.tsx` -- Add `/admin` route
-5. **Edit:** `supabase/functions/vibe-match/index.ts` -- Read `matching_mode` from `app_settings` before matching
-6. **Edit:** `supabase/config.toml` -- Register `admin-api` function
-
-### What's Deferred (Not Now)
-
-- Per-user ban/mute (add when needed)
-- Admin audit log of setting changes
-- Multi-admin management UI (add admins directly via database for now)
-- Analytics charts (start with raw numbers, add Recharts later)
-- Detailed vibe session history view
+| File | Change |
+|------|--------|
+| `supabase/functions/admin-api/index.ts` | Expand profile select to all columns |
+| `src/pages/Admin.tsx` | Add expandable row detail, update types |
+| `src/pages/VibeMatch.tsx` | Use `100dvh`, flex layout, remove fixed height |
+| `src/components/demo/ChatZone.tsx` | Input font 16px, larger send button, mobile-safe attrs |
+| `index.html` | Add `maximum-scale=1, user-scalable=no` to viewport meta |
 
