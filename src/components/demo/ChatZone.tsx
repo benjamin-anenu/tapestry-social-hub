@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { MessageCircle, Lightbulb, Send } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -27,6 +27,7 @@ interface ChatZoneProps {
 const ChatZone = ({ timeLeft, messages, clueDrops, onSendMessage, disabled, isTyping }: ChatZoneProps) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [inputValue, setInputValue] = useState("");
+  const [keyboardPadding, setKeyboardPadding] = useState(0);
 
   const visibleMessages = messages.filter((m) => timeLeft <= m.time);
   const visibleClues = clueDrops.filter((c) => timeLeft <= c.time);
@@ -36,11 +37,33 @@ const ChatZone = ({ timeLeft, messages, clueDrops, onSendMessage, disabled, isTy
     ...visibleClues.map((c) => ({ type: "clue" as const, time: c.time, data: c })),
   ].sort((a, b) => a.time - b.time);
 
-  useEffect(() => {
+  const scrollToBottom = useCallback(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [allItems.length]);
+  }, []);
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [allItems.length, scrollToBottom]);
+
+  // Detect mobile keyboard via visualViewport
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const onResize = () => {
+      const kbHeight = Math.max(0, window.innerHeight - vv.height);
+      setKeyboardPadding(kbHeight);
+      // Scroll to bottom when keyboard opens
+      setTimeout(scrollToBottom, 50);
+    };
+    vv.addEventListener("resize", onResize);
+    vv.addEventListener("scroll", onResize);
+    return () => {
+      vv.removeEventListener("resize", onResize);
+      vv.removeEventListener("scroll", onResize);
+    };
+  }, [scrollToBottom]);
 
   const handleSend = () => {
     const trimmed = inputValue.trim();
@@ -129,12 +152,16 @@ const ChatZone = ({ timeLeft, messages, clueDrops, onSendMessage, disabled, isTy
 
       {/* Chat input */}
       {onSendMessage && (
-        <div className="border-t border-border/50 p-3 shrink-0">
+        <div
+          className="border-t border-border/50 p-3 shrink-0 transition-[padding] duration-150"
+          style={{ paddingBottom: keyboardPadding > 0 ? `${keyboardPadding + 12}px` : undefined }}
+        >
           <div className="flex gap-2">
             <Input
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={handleKeyDown}
+              onFocus={scrollToBottom}
               placeholder="Type a message..."
               disabled={disabled}
               autoComplete="off"
