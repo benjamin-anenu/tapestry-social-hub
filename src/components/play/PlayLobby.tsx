@@ -175,7 +175,7 @@ const PlayLobby = ({ profile, profileId, walletAddress }: PlayLobbyProps) => {
         ) : (
           <>
             <Search className="mr-2 h-5 w-5" />
-            Find Match
+            Start Vibe
           </>
         )}
       </Button>
