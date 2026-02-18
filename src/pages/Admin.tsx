@@ -10,7 +10,12 @@ import { Button } from "@/components/ui/button";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Users, Activity, Zap, Settings, ArrowLeft, ShieldAlert, Loader2 } from "lucide-react";
+import { Users, Activity, Zap, Settings, ArrowLeft, ShieldAlert, Loader2, Trash2 } from "lucide-react";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { toast } from "@/hooks/use-toast";
 
 interface UserProfile {
@@ -90,6 +95,19 @@ const Admin = () => {
       toast({ title: "Updated", description: `Matching mode set to ${mode.replace("_", " ")}` });
     }
     setSavingMode(false);
+  };
+
+  const handleDeleteUser = async (userId: string, username: string | null) => {
+    if (!walletAddress) return;
+    const { data: resp, error } = await supabase.functions.invoke("admin-api", {
+      body: { action: "delete_user", walletAddress, value: userId },
+    });
+    if (error || resp?.error) {
+      toast({ title: "Error", description: "Failed to delete user", variant: "destructive" });
+    } else {
+      setData((prev) => prev ? { ...prev, users: prev.users.filter((u) => u.id !== userId), totalUsers: prev.totalUsers - 1 } : prev);
+      toast({ title: "Deleted", description: `User ${username ?? "unknown"} has been removed` });
+    }
   };
 
   // Not connected
@@ -284,6 +302,29 @@ const Admin = () => {
                                 <p className="text-foreground mt-0.5">{user.bio_text}</p>
                               </div>
                             )}
+                            <div className="col-span-2 md:col-span-3 pt-2 border-t border-primary/10">
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button variant="destructive" size="sm" className="gap-2">
+                                    <Trash2 className="h-4 w-4" /> Delete User
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>Delete {user.username ?? "this user"}?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      This will permanently remove the user and all their associated data (games, sessions, messages, friendships). This action cannot be undone.
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction onClick={() => handleDeleteUser(user.id, user.username)}>
+                                      Delete
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            </div>
                           </div>
                         </TableCell>
                       </TableRow>
