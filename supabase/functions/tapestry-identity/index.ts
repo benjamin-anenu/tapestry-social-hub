@@ -42,9 +42,37 @@ serve(async (req) => {
       throw new Error("TAPESTRY_API_KEY is not configured");
     }
 
-    const { walletAddress, username, bio, checkUsername, realName, country, xHandle, instagramHandle, bioText } = await req.json();
+    const { walletAddress, username, bio, checkUsername, realName, country, xHandle, instagramHandle, bioText, updateProfile } = await req.json();
 
-    // === CHECK USERNAME AVAILABILITY MODE ===
+    // === UPDATE PROFILE MODE (edit existing) ===
+    if (updateProfile && walletAddress) {
+      try {
+        const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+        const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+        const supabase = createClient(supabaseUrl, serviceKey);
+        const updateFields: Record<string, unknown> = {};
+        if (realName !== undefined) updateFields.real_name = realName || null;
+        if (country !== undefined) updateFields.country = country || null;
+        if (xHandle !== undefined) updateFields.x_handle = xHandle || null;
+        if (instagramHandle !== undefined) updateFields.instagram_handle = instagramHandle || null;
+        if (bioText !== undefined) updateFields.bio_text = bioText || null;
+        const { error: updateErr } = await supabase
+          .from("profiles")
+          .update(updateFields)
+          .eq("wallet_address", walletAddress);
+        if (updateErr) throw updateErr;
+        return new Response(JSON.stringify({ success: true }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      } catch (e) {
+        console.error("Profile update error:", e);
+        return new Response(JSON.stringify({ error: "Failed to update profile" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
     if (checkUsername) {
       const checkRes = await fetch(
         `${TAPESTRY_API}/profiles/${encodeURIComponent(checkUsername)}?apiKey=${TAPESTRY_API_KEY}`
