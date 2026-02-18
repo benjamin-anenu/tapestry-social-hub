@@ -10,7 +10,7 @@ Deno.serve(async (req) => {
 
   try {
     const { sessionId, walletAddress, text } = await req.json();
-    if (!sessionId || !walletAddress || !text) throw new Error("Missing fields");
+    if (!sessionId || !walletAddress) throw new Error("Missing fields");
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -39,20 +39,24 @@ Deno.serve(async (req) => {
       throw new Error("Not a participant");
     }
 
-    // Append message to chat_log
     const chatLog = Array.isArray(session.chat_log) ? session.chat_log : [];
-    chatLog.push({
-      sender: walletAddress,
-      text: text.slice(0, 500), // limit message length
-      time: Date.now(),
-    });
 
-    await supabase
-      .from("vibe_sessions")
-      .update({ chat_log: chatLog })
-      .eq("id", sessionId);
+    // If text is provided, append message
+    if (text) {
+      chatLog.push({
+        sender: walletAddress,
+        text: text.slice(0, 500),
+        time: Date.now(),
+      });
 
-    return new Response(JSON.stringify({ ok: true }), {
+      await supabase
+        .from("vibe_sessions")
+        .update({ chat_log: chatLog })
+        .eq("id", sessionId);
+    }
+
+    // Return full chat_log for polling support
+    return new Response(JSON.stringify({ ok: true, chatLog }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {

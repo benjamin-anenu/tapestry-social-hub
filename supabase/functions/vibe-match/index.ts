@@ -9,10 +9,13 @@ const BOT_WALLET = "BOT_AMARA_001";
 
 const AMARA_GREETINGS = [
   "Hey! 👋 I'm Amara. So tell me, what's your vibe?",
-  "Hi there! I'm Amara from Lagos 🇳🇬 What brings you here today?",
-  "Hey hey! Amara here. You better be interesting o 😄 What's good?",
-  "Hello! I'm Amara. Let's see if you can keep up with a Lagos babe 💛 What's your story?",
+  "Hi there! I'm Amara, based in Lagos. What brings you here today?",
+  "Hey! Amara here. I'm curious — what's your story?",
+  "Hello! I'm Amara. Let's see if we click sha 💛 What do you do?",
 ];
+
+const FRESHNESS_WINDOW_MS = 2 * 60 * 1000; // 2 minutes
+const SESSION_EXPIRY_MS = 3 * 60 * 1000; // 3 minutes
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -25,6 +28,14 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
+
+    // === Expire stale active sessions (older than 3 minutes) ===
+    const staleThreshold = new Date(Date.now() - SESSION_EXPIRY_MS).toISOString();
+    await supabase
+      .from("vibe_sessions")
+      .update({ status: "completed", ended_at: new Date().toISOString() })
+      .in("status", ["waiting", "active"])
+      .lt("created_at", staleThreshold);
 
     // Get requesting user's profile
     const { data: profileData } = await supabase
@@ -57,7 +68,10 @@ Deno.serve(async (req) => {
       .update({ is_online: true, last_seen: new Date().toISOString() })
       .eq("id", myProfile.id);
 
-    // Find candidates: online, not self, not bot
+    // Freshness cutoff: only match users seen within last 2 minutes
+    const freshnessCutoff = new Date(Date.now() - FRESHNESS_WINDOW_MS).toISOString();
+
+    // Find candidates: online, fresh, not self, not bot
     let candidates: typeof profileData[] | null = null;
 
     // Prefer same country first
@@ -69,6 +83,7 @@ Deno.serve(async (req) => {
         .eq("is_bot", false)
         .neq("id", myProfile.id)
         .eq("country", myProfile.country)
+        .gte("last_seen", freshnessCutoff)
         .limit(20);
       candidates = data;
     }
@@ -81,6 +96,7 @@ Deno.serve(async (req) => {
         .eq("is_online", true)
         .eq("is_bot", false)
         .neq("id", myProfile.id)
+        .gte("last_seen", freshnessCutoff)
         .limit(20);
       candidates = data;
     }

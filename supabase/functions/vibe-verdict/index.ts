@@ -70,7 +70,6 @@ Deno.serve(async (req) => {
       // Create mutual friendship
       const partnerId = isA ? session.user_b_id : session.user_a_id;
 
-      // Insert both directions as mutual
       await supabase.from("friendships").insert([
         { follower_id: profile.id, following_id: partnerId, mutual: true },
         { follower_id: partnerId, following_id: profile.id, mutual: true },
@@ -83,7 +82,7 @@ Deno.serve(async (req) => {
         { onConflict: "participant_a,participant_b" }
       );
 
-      // Call Tapestry follow API for both
+      // Call Tapestry follow API for both users
       const apiKey = Deno.env.get("TAPESTRY_API_KEY");
       if (apiKey) {
         const { data: myProfile } = await supabase
@@ -98,20 +97,35 @@ Deno.serve(async (req) => {
           .single();
 
         if (myProfile?.username && partnerProfile?.username) {
-          const tapestryUrl = "https://api.usetapestry.dev/api/v1";
-          // Follow each other
-          await Promise.allSettled([
-            fetch(`${tapestryUrl}/profiles/${myProfile.username}/follow`, {
+          const tapestryUrl = "https://api.usetapestry.dev/v1";
+          // Follow each other using correct Tapestry API: POST /followers?apiKey=KEY
+          const followResults = await Promise.allSettled([
+            fetch(`${tapestryUrl}/followers?apiKey=${apiKey}`, {
               method: "POST",
-              headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-              body: JSON.stringify({ targetUsername: partnerProfile.username }),
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ startId: myProfile.username, endId: partnerProfile.username }),
             }),
-            fetch(`${tapestryUrl}/profiles/${partnerProfile.username}/follow`, {
+            fetch(`${tapestryUrl}/followers?apiKey=${apiKey}`, {
               method: "POST",
-              headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-              body: JSON.stringify({ targetUsername: myProfile.username }),
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ startId: partnerProfile.username, endId: myProfile.username }),
             }),
           ]);
+
+          // Log results for debugging
+          for (const [i, result] of followResults.entries()) {
+            if (result.status === "fulfilled") {
+              const resp = result.value;
+              if (!resp.ok) {
+                const body = await resp.text();
+                console.error(`Tapestry follow ${i} failed:`, resp.status, body);
+              } else {
+                console.log(`Tapestry follow ${i} succeeded`);
+              }
+            } else {
+              console.error(`Tapestry follow ${i} error:`, result.reason);
+            }
+          }
         }
       }
 
