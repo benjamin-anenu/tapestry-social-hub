@@ -29,6 +29,14 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
+    // === Read matching mode from app_settings ===
+    const { data: modeSetting } = await supabase
+      .from("app_settings")
+      .select("value")
+      .eq("key", "matching_mode")
+      .single();
+    const matchingMode = modeSetting?.value ?? "auto";
+
     // === Expire stale active sessions (older than 3 minutes) ===
     const staleThreshold = new Date(Date.now() - SESSION_EXPIRY_MS).toISOString();
     await supabase
@@ -117,8 +125,8 @@ Deno.serve(async (req) => {
 
     const filtered = (candidates ?? []).filter((c) => !excludeIds.has(c.id));
 
-    // If humans found, match with a random human
-    if (filtered.length > 0) {
+    // If humans found and not bot_only mode, match with a random human
+    if (filtered.length > 0 && matchingMode !== "bot_only") {
       const partner = filtered[Math.floor(Math.random() * filtered.length)];
 
       const { data: session, error: sessionErr } = await supabase
@@ -144,7 +152,13 @@ Deno.serve(async (req) => {
       });
     }
 
-    // === BOT FALLBACK: Match with Amara ===
+    // === BOT FALLBACK: Match with Amara (skip if human_only) ===
+    if (matchingMode === "human_only") {
+      return new Response(JSON.stringify({ error: "No one online right now — try again in a bit!" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const { data: botProfile } = await supabase
       .from("profiles")
       .select("id, username, display_name")
