@@ -1,159 +1,92 @@
 
 
-## Premium PWA Onboarding Experience
+## Regenerate Onboarding Images with Tapestry + Solana Branding
 
 ### Overview
 
-Build a 5-screen onboarding flow that appears on first app launch (tracked via `localStorage`). Each screen tells a chapter of the Vibe60 story from a Web3 perspective, with AI-generated 3D hyper-realistic hero images, smooth swipe/tap navigation, and responsive design for all PWA screen sizes.
+Replace the 5 onboarding hero images with new AI-generated images that are explicitly Tapestry and Solana branded, reflecting the demo nature of the app. Each image will be generated using the Lovable AI image generation model (google/gemini-3-pro-image-preview) via an edge function, then saved as static assets.
 
 ---
 
-### The 5 Screens (Story Arc)
+### Image Prompts (Detailed)
 
 **Screen 1: "Your Vibe, On-Chain"**
-- Hero image: A luminous digital identity crystal floating in deep space, connected by glowing neural threads to a Solana blockchain constellation
-- Copy: Introduces the concept -- your social identity lives on-chain via Tapestry on Solana. Portable, permanent, yours.
-- Key message: "Connect your wallet. Own your identity."
+- Split composition showing a glowing on-chain identity profile card with the Tapestry logo
+- Vibe energy lines (electric blue and neon green) flowing through and around the card
+- Solana logo and blockchain node constellation in the background
+- Dark background (#0a0f1a), cinematic lighting, 3D hyper-realistic style
+- Tapestry branding visible on the identity card
 
 **Screen 2: "60 Seconds to Connect"**
-- Hero image: Two holographic avatars facing each other across a neon-lit arena, a 60-second timer orbiting between them like a ring of light
-- Copy: Explains the core Vibe Match mechanic -- get matched with a stranger, chat for 60 seconds, decide if you vibe.
-- Key message: "One minute. Real conversations. No algorithms."
+- Divided/split-screen composition: left side shows a young woman at home on her couch, right side shows a young man at a bar
+- Both facing their phones, mid-thought, trying to type a message
+- Tapestry-branded identity cards floating above each person
+- Solana blockchain visual elements (chains, nodes, the Solana logo) connecting the two halves
+- A 60-second timer element visible between them
+- 3D hyper-realistic, dark cinematic tones with electric blue and neon green accents
 
 **Screen 3: "The Vibe Check"**
-- Hero image: A dramatic split-screen moment -- two hands reaching toward each other through a portal of electric blue and neon green energy, symbolizing mutual reveal
-- Copy: If both say "Vibe" -- real names, socials, and profiles unlock. No match? Nothing shared. Privacy by design.
-- Key message: "Mutual consent unlocks real connections."
+- Divided/split-screen: two people at different locations (one at a park bench, one at a coffee shop)
+- Both sweating but laughing with big smiles -- the relief of a mutual match
+- A "Vibe Checked" confirmation badge/button visible on both sides, glowing green
+- Tapestry and Solana branding subtle in the background
+- Warm, celebratory energy with neon accents
 
 **Screen 4: "Build Your Circle"**
-- Hero image: A futuristic social graph visualization -- interconnected nodes of friends orbiting a central profile, each connection glowing with on-chain verification badges
-- Copy: Your friends live on Tapestry's open social graph. Portable across every app in the ecosystem. Your circle grows with every vibe.
-- Key message: "Friends on-chain. Portable everywhere."
+- Regenerate with stronger Tapestry branding: a social graph with the Tapestry logo at the center node
+- Friend nodes connected with on-chain verification badges featuring Solana branding
+- Portable identity concept: nodes extending outward to other app icons
+- Dark background with electric blue connections
 
 **Screen 5: "Game On"**
-- Hero image: An epic arena scene -- friends facing off in a staked game, SOL tokens floating in the air, a leaderboard hologram rising behind them
-- Copy: Challenge your circle to staked games. Climb the ranks. Earn together. The Game Arena is where vibes become victories.
-- Key message: "Play with friends. Win together."
+- Board game scene: friends gathered around a digital game board
+- SOL tokens (not Bitcoin) floating above the board, with the Solana logo clearly visible
+- Leaderboard hologram in the background
+- Tapestry identity cards visible for each player
+- Fun, competitive energy with neon lighting
 
 ---
 
 ### Architecture
 
-**New files:**
-1. `src/components/onboarding/OnboardingFlow.tsx` -- Main container with state management, swipe navigation, and screen transitions
-2. `src/components/onboarding/OnboardingScreen.tsx` -- Reusable screen component (image, title, subtitle, body, indicators, CTA)
-3. `src/components/onboarding/onboardingData.ts` -- Screen content data (titles, descriptions, image references)
-4. `supabase/functions/generate-onboarding-images/index.ts` -- Edge function to generate 3D hyper-realistic images using Lovable AI (Gemini image model)
-5. `src/hooks/useOnboarding.ts` -- Hook to check/set onboarding completion state
+**Edge function:** `supabase/functions/generate-onboarding-images/index.ts`
+- POST endpoint that generates all 5 images using google/gemini-3-pro-image-preview
+- Uses LOVABLE_API_KEY (auto-provisioned)
+- Returns base64 images
+- Each image generated with a detailed prompt as described above
 
-**Modified files:**
-1. `src/App.tsx` -- Wrap the router with onboarding gate logic
+**Storage:** Upload generated images to a Lovable Cloud storage bucket (`onboarding-images`, public read)
 
----
-
-### Technical Implementation
-
-**Onboarding Gate (App.tsx):**
-- Check `localStorage` for `vibe60-onboarding-complete`
-- If not found, render `<OnboardingFlow />` instead of the router
-- On completion, set the flag and render the normal app
-
-**OnboardingFlow Component:**
-- Uses `useState` for current screen index (0-4)
-- Framer Motion `AnimatePresence` for screen transitions (fade + slide)
-- Touch swipe detection via pointer events (swipe left = next, swipe right = prev)
-- Dot indicators showing progress
-- "Skip" button on screens 1-4
-- "Get Started" CTA on the final screen
-- Responsive: full `h-[100dvh]` layout, image scales proportionally, text adjusts for mobile/tablet/desktop
-
-**Image Generation:**
-- Create an edge function that calls the Lovable AI image generation endpoint (`google/gemini-3-pro-image-preview` for highest quality)
-- Generate 5 images with detailed prompts matching each screen's story
-- Upload generated images to a Lovable Cloud storage bucket
-- The onboarding component loads images from the storage bucket URLs
-- Fallback: If images haven't been generated yet, show a gradient placeholder with the screen's icon
-
-**Responsive Design (all PWA sizes):**
-- Mobile (320-414px): Image takes ~45% height, text below with larger touch targets
-- Tablet (768-1024px): Image takes ~50% height, centered layout with more whitespace
-- Desktop (1024px+): Side-by-side layout option or centered with max-width constraint
-- All use `100dvh` for proper keyboard/notch handling
-- Safe area padding for notched devices (`env(safe-area-inset-*)`)
-
-**Screen Component Layout:**
-```text
-+----------------------------------+
-|         [Skip]          (1/5)    |
-|                                  |
-|     +----------------------+     |
-|     |                      |     |
-|     |    3D Hero Image     |     |
-|     |    (aspect 16:10)    |     |
-|     |                      |     |
-|     +----------------------+     |
-|                                  |
-|     SCREEN TITLE                 |
-|     Subtitle / tagline           |
-|                                  |
-|     Body paragraph text          |
-|     explaining the feature       |
-|                                  |
-|        o  o  [o]  o  o           |
-|                                  |
-|     [    Next / Get Started  ]   |
-+----------------------------------+
-```
-
-**Swipe Navigation:**
-- Track `onPointerDown` / `onPointerUp` x-coordinates
-- If delta > 50px left, advance; if delta > 50px right, go back
-- Keyboard: ArrowLeft/ArrowRight support for desktop
-
-**Storage Bucket:**
-- Create a `onboarding-images` storage bucket (public read)
-- Store generated images as `screen-1.png` through `screen-5.png`
-
-**Edge Function (generate-onboarding-images):**
-- POST endpoint, admin-only (checks for a simple secret or admin auth)
-- Calls Lovable AI with `google/gemini-3-pro-image-preview` model and `modalities: ["image", "text"]`
-- Detailed prompts for each screen specifying: 3D hyper-realism, dark background matching the app's `#0a0f1a` theme, electric blue and neon green accent colors, cinematic lighting
-- Uploads each result to the storage bucket
-- Returns the public URLs
-
-**localStorage Key:** `vibe60-onboarding-complete` = `"true"`
+**Frontend update:** Modify `src/components/onboarding/onboardingData.ts` to reference the new storage bucket URLs instead of local asset imports
 
 ---
 
-### Edge Cases Handled
+### Technical Details
 
-- **Returning users**: localStorage check skips onboarding entirely
-- **Cleared storage**: User sees onboarding again (acceptable -- it's a brief, informative experience)
-- **Slow image loading**: Skeleton shimmer placeholder while images load; gradient fallback if fetch fails
-- **Screen rotation**: `100dvh` + flex layout adapts automatically
-- **Accessibility**: All images have descriptive alt text; dot indicators have aria-labels; keyboard navigation supported
-- **PWA standalone mode**: Works identically whether opened in browser or as installed PWA
-- **No network**: If images fail to load from storage, show styled gradient placeholders with Lucide icons (graceful degradation)
+**Files to create:**
+1. `supabase/functions/generate-onboarding-images/index.ts` -- Edge function to generate images via Lovable AI
 
----
+**Files to modify:**
+1. `src/components/onboarding/onboardingData.ts` -- Update image references to point to storage bucket URLs, update alt text to match new image descriptions
+2. `supabase/config.toml` -- Add function configuration with verify_jwt = false
 
-### Database Changes
+**Database changes:**
+- Create `onboarding-images` storage bucket (public read access)
 
-**New storage bucket:**
-- `onboarding-images` (public read, admin write)
-- RLS: Public SELECT, authenticated INSERT/UPDATE/DELETE restricted to service role
+**Implementation steps:**
+1. Create the storage bucket for onboarding images
+2. Build the edge function with detailed prompts for all 5 screens
+3. Deploy and invoke the edge function to generate images
+4. Update onboardingData.ts to load images from storage bucket URLs
+5. Add fallback handling: if bucket images fail to load, show gradient placeholders
+6. Remove the old static asset files (onboarding-1.png through onboarding-5.png) once bucket images are confirmed working
 
----
+**Image generation model:** google/gemini-3-pro-image-preview (highest quality)
 
-### Implementation Order
-
-1. Create the `useOnboarding` hook (localStorage check)
-2. Create `onboardingData.ts` with screen content
-3. Build `OnboardingScreen.tsx` (single screen component)
-4. Build `OnboardingFlow.tsx` (navigation, swipe, transitions)
-5. Gate `App.tsx` with onboarding check
-6. Create storage bucket for images
-7. Build and deploy the image generation edge function
-8. Generate the 5 images and upload to storage
-9. Connect the onboarding screens to the stored image URLs
+**Prompt structure for each image:**
+- Style: 3D hyper-realistic, cinematic lighting, dark background (#0a0f1a)
+- Colors: electric blue (#3b82f6), neon green (#22c55e) accents
+- Branding: Tapestry logo/text and Solana logo/text where specified
+- Aspect: landscape-leaning for mobile-first card layout
+- Quality: Maximum detail, photorealistic textures
 
