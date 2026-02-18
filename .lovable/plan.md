@@ -1,56 +1,66 @@
 
 
-## Fix: Help Section Formatting + Mobile Keyboard Overlay in Vibe Chat
+## Fix: Professional Mobile Chat Keyboard Experience
 
-### Change 1: Left-Align "What is a wallet?" Help Section
+### Problem
 
-**File:** `src/components/play/MobileWalletConnect.tsx`
+The current approach fights the browser's natural keyboard behavior. It uses `fixed inset-0` (which ignores the keyboard) and then tries to manually detect the keyboard height via `visualViewport` to add padding. This is fragile and doesn't work reliably across devices.
 
-The collapsible help content (lines 113-151) needs better formatting:
-- Change `list-inside` to `list-outside` with left padding (`pl-5`) on the ordered lists so numbers sit cleanly outside the text
-- Add `text-left` to the container to ensure all text aligns left consistently
-- Add slightly more spacing between sections (`space-y-5` instead of `space-y-4`)
-- Increase paragraph line height for readability
+Professional chat apps (WhatsApp, Instagram, ChatGPT) work differently -- they let the browser naturally resize the layout when the keyboard opens.
 
-### Change 2: Mobile Keyboard Overlay for Vibe Match Chat
+### Solution: Work WITH the browser, not against it
 
-**Problem:** On mobile, opening the keyboard resizes the viewport (via `100dvh`), which compresses the chat area and pushes messages up awkwardly.
+The fix is simple and involves removing complexity, not adding it.
 
-**Solution:** Two changes working together:
+---
 
-**File:** `src/pages/VibeMatch.tsx`
-- Switch the outer container from `h-[100dvh]` to `h-[100vh]` with a fixed position (`fixed inset-0`) so the layout does not resize when the mobile keyboard appears
-- This makes the keyboard overlay the bottom of the screen instead of shrinking the layout
+### Change 1: VibeMatch.tsx -- Use `dvh` instead of `fixed inset-0`
 
-**File:** `src/components/demo/ChatZone.tsx`
-- Add `visualViewport` resize listener that detects when the keyboard opens on mobile
-- When keyboard is detected, apply bottom padding to the input area equal to the keyboard height so the input and last message stay visible above the keyboard
-- Auto-scroll to the latest message whenever new messages arrive or the keyboard opens
-- Use CSS `env(safe-area-inset-bottom)` as a fallback for devices with bottom bars
+Replace `fixed inset-0` with `h-[100dvh]` on the outer container.
+
+- `100dvh` (dynamic viewport height) is a CSS unit that automatically shrinks when the mobile keyboard opens
+- This means the entire layout naturally compresses to fit the visible area above the keyboard
+- The flex layout ensures the input stays at the bottom of the visible area and the messages area shrinks
+- No manual keyboard detection needed
+
+### Change 2: ChatZone.tsx -- Remove all keyboard hacks
+
+Strip out:
+- The `keyboardPadding` state
+- The `visualViewport` resize/scroll listener
+- The dynamic `paddingBottom` style on the input container
+
+These are no longer needed because `100dvh` handles everything automatically.
+
+Keep:
+- The `scrollToBottom` on new messages (already works)
+- The `onFocus` scroll on the input (ensures latest message is visible when you tap the input)
+- The `text-base` font size on the input (prevents iOS auto-zoom on inputs smaller than 16px)
+
+### Change 3: FriendChat.tsx -- Same treatment
+
+Replace `h-screen` with `h-[100dvh]` so the direct message chat also works properly with mobile keyboards.
+
+---
+
+### Why this works
+
+On mobile browsers:
+- `100vh` = full viewport including area behind keyboard (bad -- keyboard covers content)
+- `fixed inset-0` = same problem as 100vh
+- `100dvh` = viewport minus keyboard height (good -- content reshapes to fit)
+
+This is exactly what WhatsApp, iMessage, and ChatGPT web do. The layout naturally adapts, the input stays visible, and messages scroll to show the latest one.
 
 ---
 
 ### Technical Details
 
-**Keyboard detection approach (ChatZone.tsx):**
-```typescript
-useEffect(() => {
-  const vv = window.visualViewport;
-  if (!vv) return;
-  const onResize = () => {
-    const keyboardHeight = window.innerHeight - vv.height;
-    // Apply as padding to keep input above keyboard
-  };
-  vv.addEventListener("resize", onResize);
-  return () => vv.removeEventListener("resize", onResize);
-}, []);
-```
+**Files to modify:**
 
-**VibeMatch.tsx layout change:**
-- Outer div: `fixed inset-0` instead of `h-[100dvh]` -- prevents the browser from resizing the layout when the keyboard appears
+1. `src/pages/VibeMatch.tsx` (line 230): Change `fixed inset-0` to `h-[100dvh]`
+2. `src/components/demo/ChatZone.tsx`: Remove `keyboardPadding` state, remove `visualViewport` effect (lines 30, 50-66, 157), remove dynamic padding style
+3. `src/pages/FriendChat.tsx` (line 231): Change `h-screen` to `h-[100dvh]`
 
-**MobileWalletConnect.tsx formatting:**
-- Add `text-left` to the help container
-- Change `list-decimal list-inside` to `list-decimal list-outside ml-5` for proper indentation
-- These are purely visual/CSS changes
+Net result: ~20 lines of code removed, 2 class name changes. Simpler and more reliable.
 
