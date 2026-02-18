@@ -14,7 +14,7 @@ const IdentityCard = ({ profile, walletAddress }: IdentityCardProps) => {
   const following = profile.social?.following ?? 0;
   const country = (profile.profile?.country as string | undefined) ?? "";
   const shortWallet = `${walletAddress.slice(0, 4)}...${walletAddress.slice(-4)}`;
-  const crossApps = profile.crossAppProfiles?.filter(p => p.namespace !== "find60") ?? [];
+  const crossApps = profile.crossAppProfiles?.filter(p => p.namespace !== "vibe60" && p.namespace !== "find60") ?? [];
   const maxFollowers = Math.max(1, ...crossApps.map(p => p.followers));
 
   return (

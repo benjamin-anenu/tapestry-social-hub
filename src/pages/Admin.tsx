@@ -267,7 +267,7 @@ const Admin = () => {
                               ["Tapestry ID", user.tapestry_id],
                               ["Games Played", user.games_played],
                               ["Games Won", user.games_won],
-                              ["Find Score", user.find_score],
+                              ["Vibe Score (Find)", user.find_score],
                               ["Hide Score", user.hide_score],
                               ["Hunter Pts", user.hunter_points],
                               ["Hunted Pts", user.hunted_points],

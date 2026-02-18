@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -7,7 +8,7 @@ const corsHeaders = {
 };
 
 const TAPESTRY_API = "https://api.usetapestry.dev/api/v1";
-const NAMESPACE = "find";
+const NAMESPACE = "vibe";
 
 // Helper: find all profiles linked to a wallet address
 async function getProfilesByWallet(apiKey: string, walletAddress: string) {
@@ -40,7 +41,7 @@ serve(async (req) => {
       throw new Error("TAPESTRY_API_KEY is not configured");
     }
 
-    const { walletAddress, username, bio, checkUsername } = await req.json();
+    const { walletAddress, username, bio, checkUsername, realName, country, xHandle, instagramHandle, bioText } = await req.json();
 
     // === CHECK USERNAME AVAILABILITY MODE ===
     if (checkUsername) {
@@ -134,6 +135,29 @@ serve(async (req) => {
         }
       } else {
         profile = await profileRes.json();
+      }
+
+      // Save extended profile fields to DB via service role (bypasses RLS)
+      if (walletAddress && (realName || country || xHandle || instagramHandle || bioText)) {
+        try {
+          const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+          const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+          const supabase = createClient(supabaseUrl, serviceKey);
+          const updateFields: Record<string, unknown> = {};
+          if (realName) updateFields.real_name = realName;
+          if (country) updateFields.country = country;
+          if (xHandle) updateFields.x_handle = xHandle;
+          if (instagramHandle) updateFields.instagram_handle = instagramHandle;
+          if (bioText) updateFields.bio_text = bioText;
+          if (username) updateFields.display_name = username;
+          const { error: updateErr } = await supabase
+            .from("profiles")
+            .update(updateFields)
+            .eq("wallet_address", walletAddress);
+          if (updateErr) console.warn("Profile extension update failed:", updateErr);
+        } catch (e) {
+          console.warn("Profile extension error:", e);
+        }
       }
     } else {
       // === LOOKUP MODE ===

@@ -54,7 +54,7 @@ const Index = () => {
             transition={{ delay: 0.1 }}
             className="text-center font-display text-7xl font-bold tracking-tight text-foreground sm:text-8xl"
           >
-            <span className="glitch" data-text="FIND">FIND</span>
+            <span className="glitch" data-text="VIBE">VIBE</span>
             <span className="text-primary text-glow-blue">60</span>
 
           </motion.h1>
@@ -68,7 +68,7 @@ const Index = () => {
           >
             60 seconds to vibe. One chat. Real connections.
             <br />
-            <span className="text-foreground">Find your people on-chain.</span>
+            <span className="text-foreground">Vibe with your people on-chain.</span>
           </motion.p>
 
           {/* CTAs */}
@@ -142,7 +142,7 @@ const Index = () => {
       {/* Footer */}
       <footer className="relative z-10 border-t border-border/30 px-6 py-6">
         <p className="text-center font-mono text-[10px] tracking-widest text-muted-foreground">
-          BUILT FOR THE TAPESTRY HACKATHON · SOLANA · 2025
+          VIBE60 · BUILT FOR THE TAPESTRY HACKATHON · SOLANA · 2025
         </p>
       </footer>
     </div>

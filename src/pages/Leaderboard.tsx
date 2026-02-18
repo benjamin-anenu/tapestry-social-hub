@@ -22,7 +22,7 @@ const Leaderboard = () => {
         <h1 className="font-display text-4xl font-bold text-foreground">Leaderboard</h1>
         <p className="text-muted-foreground leading-relaxed">
           Cross-app rankings powered by Tapestry.
-          See where you stand across Find60 and the entire ecosystem.
+          See where you stand across Vibe60 and the entire ecosystem.
         </p>
         <p className="text-sm text-muted-foreground">Coming soon</p>
         <Button

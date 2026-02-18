@@ -29,7 +29,7 @@ export const MOCK_OPPONENT = {
 
 export const MOCK_REPUTATION = [
   { app: "Zumichat", score: 84, color: "hsl(220, 100%, 50%)" },
-  { app: "Find60", score: 72, color: "hsl(153, 100%, 50%)" },
+  { app: "Vibe60", score: 72, color: "hsl(153, 100%, 50%)" },
   { app: "SolArena", score: 67, color: "hsl(260, 80%, 55%)" },
 ];
 

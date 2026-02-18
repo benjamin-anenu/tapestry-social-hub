@@ -68,7 +68,7 @@ async function generateBotMessage(
   conversationHistory: Array<{ sender: string; text: string }>,
   gameContext: string
 ): Promise<string> {
-  const systemPrompt = `You are a real person playing an online identity-guessing game called Find60. Your in-game name is "${botName}".
+  const systemPrompt = `You are a real person playing an online identity-guessing game called Vibe60. Your in-game name is "${botName}".
 
 CRITICAL RULES — you MUST follow ALL of these:
 - You are a HUMAN player. Never hint, suggest, or imply that you are an AI, bot, or automated.

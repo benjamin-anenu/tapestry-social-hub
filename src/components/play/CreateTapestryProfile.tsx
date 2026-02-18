@@ -98,11 +98,21 @@ const CreateTapestryProfile = ({ walletAddress, onCreated }: CreateTapestryProfi
     try {
       const { data, error: fnError } = await supabase.functions.invoke(
         "tapestry-identity",
-        { body: { walletAddress, username: nickname.trim(), bio: bio.trim() || undefined } }
+        {
+          body: {
+            walletAddress,
+            username: nickname.trim(),
+            bio: bio.trim() || undefined,
+            realName: realName.trim() || undefined,
+            country: country || undefined,
+            xHandle: xHandle.trim() || undefined,
+            instagramHandle: instagramHandle.trim() || undefined,
+            bioText: bio.trim() || undefined,
+          },
+        }
       );
 
       if (fnError) {
-        // Extract message from edge function error response
         const errBody = typeof fnError === "object" && fnError !== null
           ? (fnError as any).message || JSON.stringify(fnError)
           : String(fnError);
@@ -110,22 +120,7 @@ const CreateTapestryProfile = ({ walletAddress, onCreated }: CreateTapestryProfi
       }
       if (data?.error) throw new Error(data.error);
 
-      // Pass profile data back
       onCreated(data);
-
-      // Update local profile with extended fields
-      const { error: updateError } = await supabase
-        .from("profiles")
-        .update({
-          real_name: realName.trim() || null,
-          country: country || null,
-          x_handle: xHandle.trim() || null,
-          instagram_handle: instagramHandle.trim() || null,
-          bio_text: bio.trim() || null,
-        } as Record<string, unknown>)
-        .eq("wallet_address", walletAddress);
-
-      if (updateError) console.warn("Profile extension failed:", updateError);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to create profile");
     } finally {
