@@ -197,6 +197,11 @@ const Admin = () => {
             <p className="text-muted-foreground text-center font-mono text-sm">
               This wallet is not authorized for admin access.
             </p>
+            {publicKey && (
+              <p className="text-muted-foreground text-center font-mono text-[10px] break-all bg-muted/50 rounded px-3 py-2 select-all">
+                {publicKey.toBase58()}
+              </p>
+            )}
             <Button variant="outline" onClick={() => navigate("/")} className="gap-2">
               <ArrowLeft className="h-4 w-4" /> Back to Home
             </Button>
