@@ -1,65 +1,64 @@
 
 
-## Fix Multiple Issues: Bot Speed, Leave Button, Layout, Friendships, Phantom
+## Show Proper Names in Circle + Make Queen Tapestry a Universal Friend with Smart DM Chat
 
-### 1. Instant Bot Match (Skip 20s Wait)
+### 1. Fix Display Names in My Circle and Chat
 
-Currently, when no humans are online, the user waits 20 seconds polling before the bot fallback kicks in. The user wants immediate bot chat when clicking "Make a Friend."
+**Problem:** The circle list and chat headers show wallet-derived usernames like "QyLSSxn7" instead of proper names. The display_name field is null for real users, and the code prefers username over display_name.
 
-**Changes:**
-- `supabase/functions/vibe-match/index.ts`: When `matchingMode` is `auto` and no other waiting humans exist, immediately create a bot session instead of creating a `waiting` session. This means the initial `vibe-match` call returns `status: "matched"` with the bot directly -- no polling needed.
-- `supabase/functions/vibe-match-poll/index.ts`: Reduce `WAIT_TIMEOUT_MS` from 20s to 5s as a safety fallback for edge cases where the initial match didn't find a bot.
-- `src/pages/VibeMatch.tsx`: The client already skips countdown for bots (lines 105-110), so no client changes needed for this.
+**Fix:**
+- **`src/pages/Friends.tsx` (line 22):** Change name resolution order to prefer `displayName` over `username`, so "Queen Tapestry" shows properly. Also always show the search bar (currently hidden unless >3 conversations).
+- **`src/pages/FriendChat.tsx` (line 220):** Same fix -- prefer `displayName` over `username` for the chat header name.
 
-### 2. Remove Leave Button During Active Vibe Session
+### 2. Make Queen Tapestry Friends with Everyone
 
-The "Leave" button at the bottom of the chat (lines 381-385 in VibeMatch.tsx) should be removed entirely during the chatting phase. Users should not be able to abandon an active session.
+**Data inserts:** Queen Tapestry (profile `46f97bab`) is already friends with 2 users. Need to add mutual friendships + conversations for the remaining users:
+- `d2cff6a6` (EFj94nBz)
+- `81e7501f` (F8nWoPWM)
 
-**Change in `src/pages/VibeMatch.tsx`:**
-- Delete lines 381-385 (the Leave button rendered during chatting phase).
+This means inserting 4 friendship rows (2 per user, both directions, mutual=true) and 2 conversation rows linking each user to Queen Tapestry.
 
-### 3. Fix Timer and Chat Layout for Mobile
+### 3. Bot DM Chat -- Queen Tapestry Replies in Direct Messages
 
-The timer needs to be truly fixed/pinned to the top of the viewport, and the keyboard should overlay the chat rather than pushing everything up.
+**Current limitation:** The `direct-chat` edge function only inserts messages. It doesn't generate AI replies when the receiver is a bot.
 
-**Changes in `src/pages/VibeMatch.tsx`:**
-- Move the timer bar outside the scrollable content area. Make it `fixed top-0` with proper z-index so it stays pinned to the screen edge regardless of scroll or keyboard.
-- The chat area should sit below the fixed timer with appropriate top padding.
-- Use `overflow: hidden` on the outer container to prevent any page scrolling.
+**New behavior:** Modify `direct-chat` to detect when `receiverProfileId` belongs to a bot profile (`is_bot = true`). When it does:
+1. Load the conversation's vibe_session chat_log as context (so she "remembers" the vibe)
+2. Load recent direct_messages for additional context
+3. Call the AI gateway with the revamped Queen Tapestry prompt
+4. Insert the bot's reply as a direct_message from the bot profile
+5. Update the conversation's last_message fields
 
-**Changes in `src/components/demo/ChatZone.tsx`:**
-- The chat container should fill the remaining space below the fixed timer.
-- The input area stays at the bottom of this container.
-- The message scroll area uses the space between timer and input.
+### 4. Completely Revamp Queen Tapestry's Persona
 
-### 4. Fix Missing Friendships (Database + Code)
+**Remove:** All "sha", "abi", "o" and heavy Nigerian slang directives. Remove the name "Amara Femilade" from the prompt so she never reveals it.
 
-**Data fix**: Insert the missing friendship rows for users `5665c3a8` and `9988ad09` who had a mutual vibe (session `e46bcb63`) but no friendship was created due to the old race condition.
+**New persona -- Queen Tapestry:**
+- Sophisticated, well-traveled Lagos girl from Lekki. Went to uni abroad. Comfortable anywhere.
+- Speaks clean, proper English by default. Can switch to pidgin if the other person initiates it. Can match any language the user speaks.
+- Deeply knowledgeable about Solana, Web3, crypto culture -- but equally versed in fashion, entertainment, music, pop culture, news.
+- Witty, makes real jokes (not generic ones). Empathetic when needed. Can get playful/wild but stays classy.
+- Genuinely curious about people. Drives conversations, introduces herself, shares opinions.
+- Not easy to impress but vibes hard when someone earns it.
+- Never reveals she's AI. Never says her real name. Gives clever deflections if pressed.
+- Each conversation opener is unique -- she checks what she said last time before generating a new one.
 
-**Code fix in `supabase/functions/vibe-verdict/index.ts`:**
-- After updating the verdict, re-fetch the session to get the latest state (not the stale pre-update data). This prevents the race condition where both users read stale data and both think the other hasn't submitted.
+### 5. Fix Self-Talking / Hallucination During Vibe Sessions
 
-**Code fix in `supabase/functions/vibe-verdict-poll/index.ts`:**
-- Add error logging for friendship inserts so failures are visible.
-- Use `upsert` instead of `insert` for friendships to handle potential duplicate race conditions.
+**Problem:** When the user is silent, the nudge system sends repeated requests to the bot. The bot sees its own previous messages as context and responds to itself, creating a one-sided monologue.
 
-### 5. Phantom Wallet
+**Fix in `supabase/functions/vibe-bot-chat/index.ts`:**
+- Before generating a nudge response, check if the last N messages in chat_log are ALL from the bot. If the bot has already sent 3-4 unanswered messages, stop responding (return a "no reply" response instead of generating more text).
+- Add a nudge instruction that explicitly tells the AI: "You already sent messages that went unanswered. Don't just keep talking. Either send ONE short natural follow-up or stay silent."
+- Track nudge count so after 3-4 attempts, the bot goes quiet (like a real person would).
 
-Phantom wallet adapter is properly configured and connects fine. The issue is only with the Admin page authorization. The wallet address display was already added to the Access Denied screen in the last change. Once the user provides their Phantom address, it can be added to `admin_wallets`.
-
-No code changes needed for this -- it's a data/authorization issue.
-
----
-
-### Technical File Changes
+### Technical Summary
 
 | File | Change |
 |------|--------|
-| `src/pages/VibeMatch.tsx` | Remove Leave button; fix timer to `fixed top-0`; adjust chat layout |
-| `src/components/demo/ChatZone.tsx` | Ensure chat fills remaining space below fixed timer |
-| `supabase/functions/vibe-match/index.ts` | Instant bot match when no humans available |
-| `supabase/functions/vibe-match-poll/index.ts` | Reduce fallback timeout to 5s |
-| `supabase/functions/vibe-verdict/index.ts` | Re-fetch session after update to prevent race condition |
-| `supabase/functions/vibe-verdict-poll/index.ts` | Use upsert for friendships; add error logging |
-| Database (data insert) | Add missing friendship rows for users 5665c3a8 and 9988ad09; add conversation |
+| `src/pages/Friends.tsx` | Prefer displayName over username; always show search bar |
+| `src/pages/FriendChat.tsx` | Prefer displayName over username in header |
+| `supabase/functions/direct-chat/index.ts` | Detect bot receiver, load context, generate AI reply, insert bot DM |
+| `supabase/functions/vibe-bot-chat/index.ts` | Revamp persona prompt; fix self-talking with nudge limits |
+| Database (data insert) | Add friendships + conversations for Queen Tapestry with remaining users |
 
