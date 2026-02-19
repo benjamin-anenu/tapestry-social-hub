@@ -217,7 +217,7 @@ const FriendChat = () => {
     }
   };
 
-  const friendName = friend?.username ?? friend?.displayName ?? "Chat";
+  const friendName = friend?.displayName ?? friend?.username ?? "Chat";
 
   if (loading) {
     return (
