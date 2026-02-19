@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import { useNavigate } from "react-router-dom";
@@ -7,41 +7,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Users, Activity, Zap, Settings, ArrowLeft, ShieldAlert, Loader2, Trash2 } from "lucide-react";
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
+import { Users, Activity, Zap, Settings, ArrowLeft, ShieldAlert, Loader2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
-
-interface UserProfile {
-  id: string;
-  username: string | null;
-  wallet_address: string;
-  vibe_score: number | null;
-  last_seen: string | null;
-  is_online: boolean;
-  created_at: string;
-  real_name: string | null;
-  display_name: string | null;
-  country: string | null;
-  city: string | null;
-  x_handle: string | null;
-  instagram_handle: string | null;
-  bio_text: string | null;
-  tapestry_id: string | null;
-  games_played: number | null;
-  games_won: number | null;
-  avatar_url: string | null;
-  find_score: number | null;
-  hide_score: number | null;
-  hunter_points: number | null;
-  hunted_points: number | null;
-}
+import AdminUserSearch from "@/components/admin/AdminUserSearch";
+import AdminBulkActions from "@/components/admin/AdminBulkActions";
+import AdminUserRow, { type UserProfile } from "@/components/admin/AdminUserRow";
 
 interface DashboardData {
   totalUsers: number;
@@ -59,6 +33,9 @@ const Admin = () => {
   const [data, setData] = useState<DashboardData | null>(null);
   const [savingMode, setSavingMode] = useState(false);
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   const walletAddress = publicKey?.toBase58() ?? null;
 
@@ -81,6 +58,39 @@ const Admin = () => {
     if (connected && walletAddress) fetchDashboard();
     else setLoading(false);
   }, [connected, walletAddress, fetchDashboard]);
+
+  const filteredUsers = useMemo(() => {
+    if (!data?.users) return [];
+    if (!searchQuery.trim()) return data.users;
+    const q = searchQuery.toLowerCase();
+    return data.users.filter(
+      (u) =>
+        (u.username?.toLowerCase().includes(q)) ||
+        u.wallet_address.toLowerCase().includes(q) ||
+        (u.display_name?.toLowerCase().includes(q)) ||
+        (u.real_name?.toLowerCase().includes(q))
+    );
+  }, [data?.users, searchQuery]);
+
+  const allFilteredSelected = filteredUsers.length > 0 && filteredUsers.every((u) => selectedIds.has(u.id));
+
+  const toggleSelectAll = (checked: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const u of filteredUsers) {
+        if (checked) next.add(u.id); else next.delete(u.id);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectOne = (id: string, checked: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id); else next.delete(id);
+      return next;
+    });
+  };
 
   const handleModeChange = async (mode: string) => {
     if (!walletAddress) return;
@@ -106,8 +116,42 @@ const Admin = () => {
       toast({ title: "Error", description: "Failed to delete user", variant: "destructive" });
     } else {
       setData((prev) => prev ? { ...prev, users: prev.users.filter((u) => u.id !== userId), totalUsers: prev.totalUsers - 1 } : prev);
+      setSelectedIds((prev) => { const n = new Set(prev); n.delete(userId); return n; });
       toast({ title: "Deleted", description: `User ${username ?? "unknown"} has been removed` });
     }
+  };
+
+  const handleBulkDelete = async () => {
+    if (!walletAddress || selectedIds.size === 0) return;
+    setBulkDeleting(true);
+    const ids = Array.from(selectedIds);
+    let deleted = 0;
+    for (const id of ids) {
+      const { error } = await supabase.functions.invoke("admin-api", {
+        body: { action: "delete_user", walletAddress, value: id },
+      });
+      if (!error) deleted++;
+    }
+    setData((prev) => prev ? { ...prev, users: prev.users.filter((u) => !selectedIds.has(u.id)), totalUsers: prev.totalUsers - deleted } : prev);
+    setSelectedIds(new Set());
+    setBulkDeleting(false);
+    toast({ title: "Bulk Delete", description: `${deleted} user(s) deleted` });
+  };
+
+  const handleExport = () => {
+    const users = data?.users.filter((u) => selectedIds.has(u.id)) ?? [];
+    if (users.length === 0) return;
+    const headers = ["username", "wallet_address", "vibe_score", "real_name", "display_name", "country", "city", "x_handle", "instagram_handle", "games_played", "games_won", "find_score", "hide_score", "hunter_points", "hunted_points", "created_at"];
+    const rows = users.map((u) => headers.map((h) => String((u as any)[h] ?? "")).join(","));
+    const csv = [headers.join(","), ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `users-export-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast({ title: "Exported", description: `${users.length} user(s) exported to CSV` });
   };
 
   // Not connected
@@ -140,7 +184,6 @@ const Admin = () => {
     );
   }
 
-  // Unauthorized
   if (!authorized) {
     return (
       <div className="min-h-screen bg-background grid-bg flex items-center justify-center p-4">
@@ -236,15 +279,29 @@ const Admin = () => {
 
         {/* Users Table */}
         <Card className="border-primary/20 bg-card/60 backdrop-blur">
-          <CardHeader>
+          <CardHeader className="space-y-4">
             <CardTitle className="font-display text-lg text-primary flex items-center gap-2">
               <Users className="h-5 w-5" /> Registered Users ({data?.users?.length ?? 0})
             </CardTitle>
+            <AdminUserSearch value={searchQuery} onChange={setSearchQuery} />
+            <AdminBulkActions
+              selectedCount={selectedIds.size}
+              onClearSelection={() => setSelectedIds(new Set())}
+              onBulkDelete={handleBulkDelete}
+              onExport={handleExport}
+              deleting={bulkDeleting}
+            />
           </CardHeader>
           <CardContent className="p-0">
             <Table>
               <TableHeader>
                 <TableRow className="border-primary/10">
+                  <TableHead className="w-10">
+                    <Checkbox
+                      checked={allFilteredSelected}
+                      onCheckedChange={toggleSelectAll}
+                    />
+                  </TableHead>
                   <TableHead className="font-mono text-xs">Username</TableHead>
                   <TableHead className="font-mono text-xs">Wallet</TableHead>
                   <TableHead className="font-mono text-xs">Vibe Score</TableHead>
@@ -253,88 +310,21 @@ const Admin = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {(data?.users ?? []).map((user) => (
-                  <React.Fragment key={user.id}>
-                    <TableRow
-                      className="border-primary/5 cursor-pointer hover:bg-primary/5 transition-colors"
-                      onClick={() => setExpandedUserId(expandedUserId === user.id ? null : user.id)}
-                    >
-                      <TableCell className="font-mono text-sm">{user.username ?? "—"}</TableCell>
-                      <TableCell className="font-mono text-xs text-muted-foreground">
-                        {user.wallet_address.slice(0, 6)}...{user.wallet_address.slice(-4)}
-                      </TableCell>
-                      <TableCell className="font-mono text-sm">{user.vibe_score ?? 0}</TableCell>
-                      <TableCell className="font-mono text-xs text-muted-foreground">
-                        {user.last_seen ? new Date(user.last_seen).toLocaleString() : "—"}
-                      </TableCell>
-                      <TableCell>
-                        <span className={`inline-block w-2 h-2 rounded-full ${user.is_online ? "bg-green-500" : "bg-muted-foreground/30"}`} />
-                      </TableCell>
-                    </TableRow>
-                    {expandedUserId === user.id && (
-                      <TableRow className="border-primary/5 bg-primary/5">
-                        <TableCell colSpan={5} className="p-4">
-                          <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-3 font-mono text-xs">
-                            {[
-                              ["Display Name", user.display_name],
-                              ["Real Name", user.real_name],
-                              ["Country", user.country],
-                              ["City", user.city],
-                              ["X Handle", user.x_handle ? `@${user.x_handle}` : null],
-                              ["Instagram", user.instagram_handle ? `@${user.instagram_handle}` : null],
-                              ["Tapestry ID", user.tapestry_id],
-                              ["Games Played", user.games_played],
-                              ["Games Won", user.games_won],
-                              ["Vibe Score (Find)", user.find_score],
-                              ["Hide Score", user.hide_score],
-                              ["Hunter Pts", user.hunter_points],
-                              ["Hunted Pts", user.hunted_points],
-                              ["Joined", new Date(user.created_at).toLocaleDateString()],
-                            ].map(([label, val]) => (
-                              <div key={label as string}>
-                                <span className="text-muted-foreground">{label as string}</span>
-                                <p className="text-foreground mt-0.5">{val ?? "—"}</p>
-                              </div>
-                            ))}
-                            {user.bio_text && (
-                              <div className="col-span-2 md:col-span-3">
-                                <span className="text-muted-foreground">Bio</span>
-                                <p className="text-foreground mt-0.5">{user.bio_text}</p>
-                              </div>
-                            )}
-                            <div className="col-span-2 md:col-span-3 pt-2 border-t border-primary/10">
-                              <AlertDialog>
-                                <AlertDialogTrigger asChild>
-                                  <Button variant="destructive" size="sm" className="gap-2">
-                                    <Trash2 className="h-4 w-4" /> Delete User
-                                  </Button>
-                                </AlertDialogTrigger>
-                                <AlertDialogContent>
-                                  <AlertDialogHeader>
-                                    <AlertDialogTitle>Delete {user.username ?? "this user"}?</AlertDialogTitle>
-                                    <AlertDialogDescription>
-                                      This will permanently remove the user and all their associated data (games, sessions, messages, friendships). This action cannot be undone.
-                                    </AlertDialogDescription>
-                                  </AlertDialogHeader>
-                                  <AlertDialogFooter>
-                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                    <AlertDialogAction onClick={() => handleDeleteUser(user.id, user.username)}>
-                                      Delete
-                                    </AlertDialogAction>
-                                  </AlertDialogFooter>
-                                </AlertDialogContent>
-                              </AlertDialog>
-                            </div>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </React.Fragment>
+                {filteredUsers.map((user) => (
+                  <AdminUserRow
+                    key={user.id}
+                    user={user}
+                    isExpanded={expandedUserId === user.id}
+                    isSelected={selectedIds.has(user.id)}
+                    onToggleExpand={() => setExpandedUserId(expandedUserId === user.id ? null : user.id)}
+                    onToggleSelect={(checked) => toggleSelectOne(user.id, !!checked)}
+                    onDelete={() => handleDeleteUser(user.id, user.username)}
+                  />
                 ))}
-                {(data?.users ?? []).length === 0 && (
+                {filteredUsers.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center text-muted-foreground font-mono text-sm py-8">
-                      No registered users yet.
+                    <TableCell colSpan={6} className="text-center text-muted-foreground font-mono text-sm py-8">
+                      {searchQuery ? "No users match your search." : "No registered users yet."}
                     </TableCell>
                   </TableRow>
                 )}
