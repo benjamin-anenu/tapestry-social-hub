@@ -1,64 +1,138 @@
 
-## Fix Build Error + Display Names + Chat/Keyboard Experience
+## Fix Queen Tapestry AI Replies + Admin Bot Configuration + Display Name Resolution
 
-### What's Actually Happening
+### Advisory Council Assessment
 
-**From the database**, real user profiles have:
-- `display_name = null` (never set)
-- `username = "QyLSSxn7"` (short wallet-derived Tapestry username)
+**The core problem, reframed:**
+Three distinct failure modes are occurring simultaneously:
 
-So "QyLSSxn7" IS the Tapestry username — it's not a wallet address, but it looks like one. The `display_name` field is simply never being written for real users.
+1. **AI Gateway 500 errors** — The `google/gemini-2.5-flash` model is returning HTTP 500 on every call to the Lovable AI Gateway, triggering the hardcoded catch fallback. This is the sole reason Queen Tapestry says *"Hey! Sorry, got distracted for a sec."* — it's not a prompt issue, it's a model availability/call issue.
 
-**Two fixes needed:**
-1. The search filter in Friends.tsx has the priority reversed: it searches `c.username ?? c.displayName` but should be `c.displayName ?? c.username`
-2. Real users' display names need to be resolved better — either from Tapestry's `username` field (which IS their chosen nickname) or we need a fallback label
+2. **Display names showing Tapestry short codes** — Users like "QyLSSxn7" have their 8-character Tapestry username as their `display_name` (correctly backfilled). This IS the correct name from the Tapestry namespace — it's just cryptic. The UI code is working correctly; the underlying data is just opaque handles. This needs a better labeling strategy, not a code fix.
 
-### Root Cause of Build Error
+3. **No admin control over Queen Tapestry's persona** — The prompt is hardcoded in two separate edge functions with no runtime configurability, violating the principle of operational separation between code and configuration.
 
-The build error is almost certainly a TypeScript issue. The `direct-chat/index.ts` edge function references `supabase.rpc("is_mutual_friend", ...)` with typed params that Deno might be rejecting. But since edge functions don't fail the React build, the build error is likely a **JSX/TypeScript error in a React file** — likely introduced during Friends.tsx or FriendChat.tsx edits (possibly an unclosed tag or type mismatch).
+---
 
-### Fix Plan
+### Issue 1: Fix the AI Gateway Call
 
-**1. Friends.tsx — Fix search filter priority + display name fallback**
-- Line 22: `convo.displayName ?? convo.username` is already correct (displayName first)
-- Line 138 (search filter): Fix `c.username ?? c.displayName` → `c.displayName ?? c.username`
-- Add a helper to make names look better: if `displayName` is null and `username` looks like a wallet short string (8 chars, alphanumeric), show it as-is but style it as a username
+**Root cause confirmed from logs:**
+```
+AI error: 500 {"type":"internal_server_error","message":"","details":""}
+```
+This is happening on every single call. The model `google/gemini-2.5-flash` is consistently failing. Switch to `google/gemini-3-flash-preview` (the recommended default) in both `direct-chat` and `vibe-bot-chat`. Also add a retry with a fallback model (`google/gemini-2.5-flash-lite`) before giving up with a hardcoded string.
 
-**2. FriendChat.tsx — Already correct at line 220**
-- `friend?.displayName ?? friend?.username ?? "Chat"` — this is correct, no change needed
+**Files affected:**
+- `supabase/functions/direct-chat/index.ts` — switch model, add retry
+- `supabase/functions/vibe-bot-chat/index.ts` — switch model, add retry
 
-**3. Fix the display name issue at source (tapestry-identity edge function)**
-- Currently `display_name` is set from Tapestry's `displayName` field
-- For users who don't set a display name on Tapestry, it falls back to null
-- Fix: When creating/finding a profile, set `display_name = username` if `display_name` is null. This ensures the circle always shows a recognizable name instead of null
+---
 
-**4. Fix search filter in Friends.tsx**
-- Line 138: Reverse priority so search checks displayName first
+### Issue 2: Display Name Clarity
 
-**5. Keyboard/Chat UX fix in FriendChat.tsx**
-- The chat input uses `h-[100dvh]` layout which should handle keyboards, but on mobile the keyboard pushing the layout needs `pb-safe` handling
-- Add `viewport-fit=cover` safe area handling to the input bar
-- The input bar `p-3` should have `pb-safe` or use `env(safe-area-inset-bottom)` for iPhone notch handling
+**The data is correct.** The DB shows `display_name = "QyLSSxn7"` — this is their chosen Tapestry username, not a wallet address (the wallet is `QyLSSxn7pbLo8cTbpZmNimmCk8Qf1M4EEUptwb16eun`). The `Friends.tsx` code correctly uses `displayName ?? username`.
+
+**The real problem:** Users never see an opportunity to set a human-readable display name. The Tapestry short handle is being used as-is.
+
+**Fix:** In `Friends.tsx`, if the `displayName` matches the wallet address prefix pattern (short alphanumeric), show it but add a subtle visual indicator. More importantly, ensure the `tapestry-identity` edge function writes proper display names when Tapestry returns a real username vs a wallet-derived one. No UI logic change needed here — the data layer is the right layer to fix this.
+
+The display name "QyLSSxn7" IS their Tapestry identity — this is correct behavior. The issue is cosmetic and the real fix is encouraging users to set a display name via profile edit.
+
+---
+
+### Issue 3: Admin — Queen Tapestry Configuration Panel
+
+**Architecture decision:** Store Queen Tapestry's persona config in `app_settings` table (already exists). Add new keys:
+- `bot_prompt_vibe` — persona prompt for vibe sessions
+- `bot_prompt_dm` — persona prompt for DM circle chat
+- `bot_model` — AI model to use (dropdown)
+- `bot_max_tokens` — max response length
+- `bot_max_nudges` — how many times she nudges before going quiet
+
+The edge functions will read these settings at runtime from `app_settings` instead of using hardcoded constants. The admin panel gets a new "Queen Tapestry" configuration card.
+
+**Data flow:**
+```text
+Admin Panel → admin-api (set_bot_config action) → app_settings table
+                                                        ↓
+                    direct-chat / vibe-bot-chat read at request time
+```
+
+**Why not hardcode in edge functions?** Because every persona tweak currently requires a code deployment. Storing in `app_settings` means real-time adjustments without code changes — a critical operational requirement for a live product.
+
+---
+
+### Technical Implementation Plan
+
+#### Step 1: Populate app_settings with bot config defaults
+Insert new rows into `app_settings`:
+- `bot_prompt_vibe` → current vibe prompt text
+- `bot_prompt_dm` → current DM prompt text  
+- `bot_model` → `google/gemini-3-flash-preview`
+- `bot_max_tokens` → `150`
+- `bot_max_nudges` → `3`
+
+#### Step 2: Update `supabase/functions/direct-chat/index.ts`
+- Remove hardcoded `QUEEN_TAPESTRY_PROMPT` constant
+- At request time, fetch `bot_prompt_dm`, `bot_model`, `bot_max_tokens` from `app_settings`
+- Switch to `google/gemini-3-flash-preview` as the model
+- Add retry: if first model call fails, retry with `google/gemini-2.5-flash-lite`
+- Fix CORS headers to include all required headers (currently missing some)
+
+#### Step 3: Update `supabase/functions/vibe-bot-chat/index.ts`
+- Remove hardcoded `QUEEN_TAPESTRY_PROMPT` and `MAX_UNANSWERED_NUDGES` constants
+- Fetch `bot_prompt_vibe`, `bot_model`, `bot_max_tokens`, `bot_max_nudges` from `app_settings`
+- Switch model + add retry logic
+
+#### Step 4: Update `supabase/functions/admin-api/index.ts`
+Add a new `set_bot_config` action that accepts a `configs` object (key-value pairs) and batch-updates `app_settings`. Also add `get_bot_config` to the `dashboard` response.
+
+#### Step 5: Update `src/pages/Admin.tsx`
+Add a new **"Queen Tapestry AI"** configuration card below the Matching Mode card with:
+- **Model selector** — dropdown: `google/gemini-3-flash-preview`, `google/gemini-2.5-flash`, `google/gemini-2.5-flash-lite`
+- **Max tokens** — number input (50–500)
+- **Max nudges (Vibe)** — number input (1–10)
+- **Vibe Persona Prompt** — large textarea (the prompt for vibe sessions)
+- **DM Persona Prompt** — large textarea (the prompt for circle DMs)
+- **Save** button that calls `admin-api` with `set_bot_config`
+
+The admin sees exactly what Queen Tapestry will say and how she'll behave. Real-time updates, no deployments needed.
+
+#### Step 6: Display name in Friends.tsx
+The existing code `displayName ?? username ?? "Unknown"` is correct. The "QyLSSxn7" is valid data. However, to make it clearer and encourage profile completion, add a subtle tooltip/tag showing "Tapestry ID" for names that look like auto-generated handles (purely alphabetic 8-char strings). This is cosmetic only.
+
+---
 
 ### Files to Change
 
 | File | Change |
 |------|--------|
-| `src/pages/Friends.tsx` | Fix search filter priority (line 138) |
-| `src/pages/FriendChat.tsx` | Add safe-area padding for keyboard on mobile, fix any build error |
-| `supabase/functions/tapestry-identity/index.ts` | Set `display_name = username` as fallback when display_name is null on upsert |
+| `supabase/functions/direct-chat/index.ts` | Read prompt from DB, fix model, add retry |
+| `supabase/functions/vibe-bot-chat/index.ts` | Read prompt/config from DB, fix model, add retry |
+| `supabase/functions/admin-api/index.ts` | Add `get_bot_config` + `set_bot_config` actions |
+| `src/pages/Admin.tsx` | Add Queen Tapestry configuration card |
 
-### Database Fix (display_name for existing users)
-Run an SQL update to backfill display_name from username for users where display_name is null:
+### Database Changes
+Insert 5 new rows into `app_settings`:
 ```sql
-UPDATE profiles 
-SET display_name = username 
-WHERE display_name IS NULL AND is_bot = false AND username IS NOT NULL;
+INSERT INTO app_settings (key, value) VALUES
+  ('bot_model', 'google/gemini-3-flash-preview'),
+  ('bot_max_tokens', '150'),
+  ('bot_max_nudges', '3'),
+  ('bot_prompt_vibe', '...vibe prompt...'),
+  ('bot_prompt_dm', '...dm prompt...')
+ON CONFLICT (key) DO NOTHING;
 ```
-This will make "QyLSSxn7" show as the display name until users set a proper one — which is better than showing nothing or a full wallet address. Future logins will automatically set display_name from username.
 
-### Technical Implementation Order
-1. Run DB backfill migration for display_name
-2. Fix Friends.tsx search filter
-3. Fix FriendChat.tsx mobile keyboard safe area
-4. Update tapestry-identity edge function to always set display_name fallback
+### Advisory Challenges to My Own Plan
+
+**Challenge 1:** Storing prompts in DB adds latency (one extra read per message). **Mitigation:** The `app_settings` table is tiny and the read costs <5ms — acceptable tradeoff for operational flexibility.
+
+**Challenge 2:** Prompts in a DB can be accidentally wiped. **Mitigation:** The edge functions should fall back to a hardcoded safe default if the DB setting is missing.
+
+**Challenge 3:** The display name issue ("QyLSSxn7") is not a bug — it's a UX/product gap. Users need a way to set human names. **Deferred:** Profile editing already exists in `EditProfileSheet.tsx` — ensure `display_name` can be set there. Out of scope for this fix.
+
+### What NOT to Do
+- Do not rename or change the fallback reply string — fix the model call so it never hits the fallback
+- Do not add more hardcoded prompts — move everything to `app_settings`
+- Do not change the display name logic in `Friends.tsx` — the code is correct, the data is the issue
