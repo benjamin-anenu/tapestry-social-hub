@@ -118,10 +118,17 @@ Deno.serve(async (req) => {
             .maybeSingle();
 
           if (claimed && !claimErr) {
+            // Set chat_starts_at for synchronized countdown
+            const chatStartsAt = new Date(Date.now() + 4000).toISOString();
+            await supabase
+              .from("vibe_sessions")
+              .update({ chat_starts_at: chatStartsAt })
+              .eq("id", claimed.id);
+
             // Get partner info
             const { data: partner } = await supabase
               .from("profiles")
-              .select("username")
+              .select("username, display_name")
               .eq("id", claimed.user_a_id)
               .single();
 
@@ -129,8 +136,9 @@ Deno.serve(async (req) => {
               status: "matched",
               sessionId: claimed.id,
               role: "b",
-              partnerName: partner?.username ?? "Stranger",
+              partnerName: partner?.display_name || partner?.username || "Stranger",
               isBot: false,
+              chatStartsAt,
             }), {
               headers: { ...corsHeaders, "Content-Type": "application/json" },
             });
@@ -188,6 +196,7 @@ Deno.serve(async (req) => {
 
       if (filtered.length > 0) {
         const partner = filtered[Math.floor(Math.random() * filtered.length)];
+        const chatStartsAt = new Date(Date.now() + 4000).toISOString();
         const { data: session, error: sessionErr } = await supabase
           .from("vibe_sessions")
           .insert({
@@ -195,17 +204,26 @@ Deno.serve(async (req) => {
             user_b_id: partner.id,
             status: "active",
             chat_log: [],
+            chat_starts_at: chatStartsAt,
           })
           .select("id")
           .single();
         if (sessionErr) throw sessionErr;
 
+        // Get display_name for partner
+        const { data: partnerFull } = await supabase
+          .from("profiles")
+          .select("display_name")
+          .eq("id", partner.id)
+          .single();
+
         return new Response(JSON.stringify({
           status: "matched",
           sessionId: session.id,
           role: "a",
-          partnerName: partner.username ?? "Stranger",
+          partnerName: partnerFull?.display_name || partner.username || "Stranger",
           isBot: false,
+          chatStartsAt,
         }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });

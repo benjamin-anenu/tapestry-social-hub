@@ -38,7 +38,7 @@ Deno.serve(async (req) => {
     // Get the session
     const { data: session } = await supabase
       .from("vibe_sessions")
-      .select("id, user_a_id, user_b_id, status, created_at")
+      .select("id, user_a_id, user_b_id, status, created_at, chat_starts_at")
       .eq("id", sessionId)
       .single();
 
@@ -56,7 +56,7 @@ Deno.serve(async (req) => {
 
       const { data: partner } = await supabase
         .from("profiles")
-        .select("username, wallet_address, is_bot")
+        .select("username, display_name, wallet_address, is_bot")
         .eq("id", partnerId)
         .single();
 
@@ -64,8 +64,9 @@ Deno.serve(async (req) => {
         status: "matched",
         sessionId: session.id,
         role: isUserA ? "a" : "b",
-        partnerName: partner?.username ?? "Stranger",
+        partnerName: partner?.display_name || partner?.username || "Stranger",
         isBot: partner?.is_bot ?? false,
+        chatStartsAt: session.chat_starts_at ?? null,
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -97,10 +98,10 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     if (otherWaiting && matchingMode !== "bot_only") {
-      // Found another waiting user! Claim their session and cancel ours
+      const chatStartsAt = new Date(Date.now() + 4000).toISOString();
       const { data: claimed } = await supabase
         .from("vibe_sessions")
-        .update({ user_b_id: myProfileId, status: "active" })
+        .update({ user_b_id: myProfileId, status: "active", chat_starts_at: chatStartsAt })
         .eq("id", otherWaiting.id)
         .eq("status", "waiting")
         .is("user_b_id", null)
@@ -108,7 +109,6 @@ Deno.serve(async (req) => {
         .maybeSingle();
 
       if (claimed) {
-        // Cancel our own waiting session
         await supabase
           .from("vibe_sessions")
           .update({ status: "completed", ended_at: new Date().toISOString() })
@@ -116,7 +116,7 @@ Deno.serve(async (req) => {
 
         const { data: partner } = await supabase
           .from("profiles")
-          .select("username")
+          .select("username, display_name")
           .eq("id", claimed.user_a_id)
           .single();
 
@@ -124,8 +124,9 @@ Deno.serve(async (req) => {
           status: "matched",
           sessionId: claimed.id,
           role: "b",
-          partnerName: partner?.username ?? "Stranger",
+          partnerName: partner?.display_name || partner?.username || "Stranger",
           isBot: false,
+          chatStartsAt,
         }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });

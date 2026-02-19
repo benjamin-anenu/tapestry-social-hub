@@ -9,7 +9,7 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { sessionId, walletAddress, verdict } = await req.json();
+    const { sessionId, walletAddress, verdict, feedback } = await req.json();
     if (!sessionId || !walletAddress || !["vibe", "nah"].includes(verdict)) {
       throw new Error("Invalid params");
     }
@@ -40,19 +40,23 @@ Deno.serve(async (req) => {
     const isB = profile.id === session.user_b_id;
     if (!isA && !isB) throw new Error("Not a participant");
 
-    // Update verdict
-    const updateField = isA ? "user_a_verdict" : "user_b_verdict";
+    // Update verdict + feedback
+    const updateFields: Record<string, string> = {};
+    updateFields[isA ? "user_a_verdict" : "user_b_verdict"] = verdict;
+    if (feedback !== undefined && feedback !== null) {
+      updateFields[isA ? "user_a_feedback" : "user_b_feedback"] = String(feedback).slice(0, 140);
+    }
     await supabase
       .from("vibe_sessions")
-      .update({ [updateField]: verdict })
+      .update(updateFields)
       .eq("id", sessionId);
 
     // Check if both have submitted
     const otherVerdict = isA ? session.user_b_verdict : session.user_a_verdict;
-    
+
     if (otherVerdict === null) {
-      // Waiting for partner
-      return new Response(JSON.stringify({ mutual: false, waiting: true }), {
+      // Waiting for partner — client should poll vibe-verdict-poll
+      return new Response(JSON.stringify({ waiting: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -67,7 +71,6 @@ Deno.serve(async (req) => {
       .eq("id", sessionId);
 
     if (mutual) {
-      // Create mutual friendship
       const partnerId = isA ? session.user_b_id : session.user_a_id;
 
       await supabase.from("friendships").insert([
@@ -75,68 +78,60 @@ Deno.serve(async (req) => {
         { follower_id: partnerId, following_id: profile.id, mutual: true },
       ]);
 
-      // Create conversation linked to this vibe session
       const [pA, pB] = [profile.id, partnerId].sort();
       await supabase.from("conversations").upsert(
         { participant_a: pA, participant_b: pB, vibe_session_id: sessionId },
         { onConflict: "participant_a,participant_b" }
       );
 
-      // Call Tapestry follow API for both users
+      // Tapestry follow
       const apiKey = Deno.env.get("TAPESTRY_API_KEY");
       if (apiKey) {
-        const { data: myProfile } = await supabase
-          .from("profiles")
-          .select("username")
-          .eq("id", profile.id)
-          .single();
-        const { data: partnerProfile } = await supabase
-          .from("profiles")
-          .select("username")
-          .eq("id", partnerId)
-          .single();
-
-        if (myProfile?.username && partnerProfile?.username) {
-          const tapestryUrl = "https://api.usetapestry.dev/v1";
-          // Follow each other using correct Tapestry API: POST /followers?apiKey=KEY
-          const followResults = await Promise.allSettled([
-            fetch(`${tapestryUrl}/followers?apiKey=${apiKey}`, {
+        const [{ data: myP }, { data: partnerP }] = await Promise.all([
+          supabase.from("profiles").select("username").eq("id", profile.id).single(),
+          supabase.from("profiles").select("username").eq("id", partnerId).single(),
+        ]);
+        if (myP?.username && partnerP?.username) {
+          const tapUrl = "https://api.usetapestry.dev/v1";
+          await Promise.allSettled([
+            fetch(`${tapUrl}/followers?apiKey=${apiKey}`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ startId: myProfile.username, endId: partnerProfile.username }),
+              body: JSON.stringify({ startId: myP.username, endId: partnerP.username }),
             }),
-            fetch(`${tapestryUrl}/followers?apiKey=${apiKey}`, {
+            fetch(`${tapUrl}/followers?apiKey=${apiKey}`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ startId: partnerProfile.username, endId: myProfile.username }),
+              body: JSON.stringify({ startId: partnerP.username, endId: myP.username }),
             }),
           ]);
-
-          // Log results for debugging
-          for (const [i, result] of followResults.entries()) {
-            if (result.status === "fulfilled") {
-              const resp = result.value;
-              if (!resp.ok) {
-                const body = await resp.text();
-                console.error(`Tapestry follow ${i} failed:`, resp.status, body);
-              } else {
-                console.log(`Tapestry follow ${i} succeeded`);
-              }
-            } else {
-              console.error(`Tapestry follow ${i} error:`, result.reason);
-            }
-          }
         }
       }
 
-      // Increment vibe scores
       await Promise.allSettled([
         supabase.rpc("increment_vibe_score" as never, { profile_id: profile.id } as never),
-        supabase.rpc("increment_vibe_score" as never, { profile_id: isA ? session.user_b_id : session.user_a_id } as never),
+        supabase.rpc("increment_vibe_score" as never, { profile_id: partnerId } as never),
       ]);
     }
 
-    return new Response(JSON.stringify({ mutual }), {
+    // Get partner info for result
+    const partnerId = isA ? session.user_b_id : session.user_a_id;
+    const otherFeedback = isA ? session.user_b_feedback : session.user_a_feedback;
+    const { data: partnerProfile } = await supabase
+      .from("profiles")
+      .select("display_name, username")
+      .eq("id", partnerId)
+      .single();
+
+    return new Response(JSON.stringify({
+      waiting: false,
+      mutual,
+      partnerName: partnerProfile?.display_name || partnerProfile?.username || "Stranger",
+      myFeedback: feedback ?? "",
+      partnerFeedback: otherFeedback ?? "",
+      myVerdict: verdict,
+      partnerVerdict: otherVerdict,
+    }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {

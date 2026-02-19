@@ -446,34 +446,43 @@ export type Database = {
       vibe_sessions: {
         Row: {
           chat_log: Json
+          chat_starts_at: string | null
           created_at: string
           ended_at: string | null
           id: string
           status: string
+          user_a_feedback: string | null
           user_a_id: string
           user_a_verdict: string | null
+          user_b_feedback: string | null
           user_b_id: string | null
           user_b_verdict: string | null
         }
         Insert: {
           chat_log?: Json
+          chat_starts_at?: string | null
           created_at?: string
           ended_at?: string | null
           id?: string
           status?: string
+          user_a_feedback?: string | null
           user_a_id: string
           user_a_verdict?: string | null
+          user_b_feedback?: string | null
           user_b_id?: string | null
           user_b_verdict?: string | null
         }
         Update: {
           chat_log?: Json
+          chat_starts_at?: string | null
           created_at?: string
           ended_at?: string | null
           id?: string
           status?: string
+          user_a_feedback?: string | null
           user_a_id?: string
           user_a_verdict?: string | null
+          user_b_feedback?: string | null
           user_b_id?: string | null
           user_b_verdict?: string | null
         }
