@@ -217,6 +217,24 @@ serve(async (req) => {
             },
             username: uname,
           };
+
+          // Sync display_name / username / tapestry_id back to DB if they differ
+          if (uname) {
+            try {
+              const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+              const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+              const supabaseClient = createClient(supabaseUrl, serviceKey);
+              const { error: syncErr } = await supabaseClient
+                .from("profiles")
+                .update({ display_name: uname, username: uname, tapestry_id: uname })
+                .eq("wallet_address", walletAddress)
+                .not("display_name", "eq", uname);
+              if (syncErr) console.warn("Display name sync failed:", syncErr);
+              else console.log("Synced display_name to:", uname);
+            } catch (e) {
+              console.warn("Display name sync error:", e);
+            }
+          }
         }
 
         crossAppProfiles = profilesList.map((p: any) => ({
