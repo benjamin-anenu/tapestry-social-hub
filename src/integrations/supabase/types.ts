@@ -452,7 +452,7 @@ export type Database = {
           status: string
           user_a_id: string
           user_a_verdict: string | null
-          user_b_id: string
+          user_b_id: string | null
           user_b_verdict: string | null
         }
         Insert: {
@@ -463,7 +463,7 @@ export type Database = {
           status?: string
           user_a_id: string
           user_a_verdict?: string | null
-          user_b_id: string
+          user_b_id?: string | null
           user_b_verdict?: string | null
         }
         Update: {
@@ -474,7 +474,7 @@ export type Database = {
           status?: string
           user_a_id?: string
           user_a_verdict?: string | null
-          user_b_id?: string
+          user_b_id?: string | null
           user_b_verdict?: string | null
         }
         Relationships: [

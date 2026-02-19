@@ -10,6 +10,7 @@ import IdentityCard from "@/components/play/IdentityCard";
 import CreateTapestryProfile from "@/components/play/CreateTapestryProfile";
 import EditProfileSheet from "@/components/play/EditProfileSheet";
 import MainHub from "@/components/play/MainHub";
+import { supabase } from "@/integrations/supabase/client";
 
 type Phase = "connect" | "identity" | "lobby";
 
@@ -31,6 +32,28 @@ const Play = () => {
       setCreatedProfile(null);
     }
   }, [connected, walletAddress, phase]);
+
+  // === HEARTBEAT: Start presence on Play page so users are visible before matching ===
+  useEffect(() => {
+    if (!walletAddress || !connected) return;
+
+    supabase.functions.invoke("vibe-match-heartbeat", {
+      body: { walletAddress },
+    });
+
+    const interval = setInterval(() => {
+      supabase.functions.invoke("vibe-match-heartbeat", {
+        body: { walletAddress },
+      });
+    }, 30000);
+
+    return () => {
+      clearInterval(interval);
+      supabase.functions.invoke("vibe-match-heartbeat", {
+        body: { walletAddress, offline: true },
+      });
+    };
+  }, [walletAddress, connected]);
 
   const activeProfile = createdProfile || profile;
   const loading = isLoading;
