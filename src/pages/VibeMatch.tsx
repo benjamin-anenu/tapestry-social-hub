@@ -36,6 +36,7 @@ const VibeMatch = () => {
     botVerdict?: string;
     botReason?: string;
   } | null>(null);
+  const [waitingSeconds, setWaitingSeconds] = useState(0);
   const lastUserMessageTime = useRef<number>(Date.now());
   const nudgeSentCount = useRef<number>(0);
   const submittingVerdict = useRef(false);
@@ -44,7 +45,6 @@ const VibeMatch = () => {
   useEffect(() => {
     if (!walletAddress) return;
 
-    // Send initial heartbeat
     supabase.functions.invoke("vibe-match-heartbeat", {
       body: { walletAddress },
     });
@@ -55,7 +55,6 @@ const VibeMatch = () => {
       });
     }, 30000);
 
-    // Mark offline on unmount
     return () => {
       clearInterval(interval);
       supabase.functions.invoke("vibe-match-heartbeat", {
@@ -93,7 +92,7 @@ const VibeMatch = () => {
     return () => clearInterval(interval);
   }, [isBot, phase, sessionId, walletAddress]);
 
-  // Find a match on mount
+  // === Find a match on mount ===
   useEffect(() => {
     if (!walletAddress) return;
     let cancelled = false;
@@ -109,23 +108,22 @@ const VibeMatch = () => {
           setError(data.error);
           return;
         }
-        if (data?.sessionId) {
+
+        if (data?.status === "matched") {
+          // Immediately matched with a human or bot
           setSessionId(data.sessionId);
           setMyRole(data.role);
           setPartnerName(data.partnerName ?? "Stranger");
           setIsBot(data.isBot ?? false);
           setPhase("chatting");
-
-          // For bot matches, load initial messages from the response directly
           if (data.isBot && Array.isArray(data.initialMessages)) {
-            setMessages(
-              data.initialMessages.map((m: { sender: string; text: string; time: number }) => ({
-                time: m.time,
-                sender: m.sender,
-                text: m.text,
-              }))
-            );
+            setMessages(data.initialMessages.map((m: any) => ({
+              time: m.time, sender: m.sender, text: m.text,
+            })));
           }
+        } else if (data?.status === "waiting" && data?.sessionId) {
+          // Enter polling mode
+          setSessionId(data.sessionId);
         } else {
           setError("No one online right now — try again in a bit!");
         }
@@ -137,6 +135,40 @@ const VibeMatch = () => {
     findMatch();
     return () => { cancelled = true; };
   }, [walletAddress]);
+
+  // === POLLING while waiting for a match (every 2.5 seconds) ===
+  useEffect(() => {
+    if (!sessionId || !walletAddress || phase !== "searching" || error) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const { data } = await supabase.functions.invoke("vibe-match-poll", {
+          body: { walletAddress, sessionId },
+        });
+
+        if (data?.status === "matched") {
+          setSessionId(data.sessionId);
+          setMyRole(data.role);
+          setPartnerName(data.partnerName ?? "Stranger");
+          setIsBot(data.isBot ?? false);
+          setPhase("chatting");
+          if (data.isBot && Array.isArray(data.initialMessages)) {
+            setMessages(data.initialMessages.map((m: any) => ({
+              time: m.time, sender: m.sender, text: m.text,
+            })));
+          }
+        } else if (data?.status === "waiting") {
+          setWaitingSeconds(data.waitingSeconds ?? 0);
+        } else if (data?.status === "expired") {
+          setError("Session expired — try again!");
+        }
+      } catch {
+        // Silently ignore polling errors
+      }
+    }, 2500);
+
+    return () => clearInterval(interval);
+  }, [sessionId, walletAddress, phase, error]);
 
   // === POLLING for human chat updates (every 2 seconds) ===
   useEffect(() => {
@@ -169,7 +201,6 @@ const VibeMatch = () => {
     lastUserMessageTime.current = Date.now();
 
     if (isBot) {
-      // Optimistically add user message
       setMessages((prev) => [
         ...prev,
         { time: Date.now(), sender: "you", text },
@@ -189,7 +220,6 @@ const VibeMatch = () => {
         setIsTyping(false);
       }
     } else {
-      // Optimistically add user message for human chat too
       setMessages((prev) => [
         ...prev,
         { time: Date.now(), sender: "you", text },
@@ -234,12 +264,16 @@ const VibeMatch = () => {
 
       <div className="relative z-10 flex w-full max-w-lg lg:max-w-2xl flex-1 flex-col items-center justify-center gap-4 px-4 py-4 min-h-0">
         <AnimatePresence mode="wait">
-          {/* SEARCHING */}
+          {/* SEARCHING / WAITING */}
           {phase === "searching" && !error && (
             <motion.div key="search" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col items-center gap-4">
               <Loader2 className="h-10 w-10 animate-spin text-primary" />
               <h2 className="font-display text-2xl font-bold text-foreground">Finding a <span className="text-primary text-glow-blue">Vibe</span></h2>
-              <p className="font-mono text-xs text-muted-foreground">Scanning for online users near you...</p>
+              <p className="font-mono text-xs text-muted-foreground">
+                {sessionId
+                  ? `Waiting for someone to join... ${waitingSeconds}s`
+                  : "Scanning for online users near you..."}
+              </p>
             </motion.div>
           )}
 

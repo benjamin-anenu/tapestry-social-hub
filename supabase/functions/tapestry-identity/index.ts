@@ -167,27 +167,29 @@ serve(async (req) => {
         profile = await profileRes.json();
       }
 
-      // Save extended profile fields to DB via service role (bypasses RLS)
-      if (walletAddress && (realName || country || xHandle || instagramHandle || bioText)) {
-        try {
-          const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-          const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-          const supabase = createClient(supabaseUrl, serviceKey);
-          const updateFields: Record<string, unknown> = {};
-          if (realName) updateFields.real_name = realName;
-          if (country) updateFields.country = country;
-          if (xHandle) updateFields.x_handle = xHandle;
-          if (instagramHandle) updateFields.instagram_handle = instagramHandle;
-          if (bioText) updateFields.bio_text = bioText;
-          if (username) updateFields.display_name = username;
-          const { error: updateErr } = await supabase
-            .from("profiles")
-            .update(updateFields)
-            .eq("wallet_address", walletAddress);
-          if (updateErr) console.warn("Profile extension update failed:", updateErr);
-        } catch (e) {
-          console.warn("Profile extension error:", e);
-        }
+      // Save profile fields to DB via service role (bypasses RLS)
+      // Always update display_name, tapestry_id, and username during create mode
+      try {
+        const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+        const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+        const supabase = createClient(supabaseUrl, serviceKey);
+        const updateFields: Record<string, unknown> = {
+          display_name: username,
+          tapestry_id: username,
+          username: username,
+        };
+        if (realName) updateFields.real_name = realName;
+        if (country) updateFields.country = country;
+        if (xHandle) updateFields.x_handle = xHandle;
+        if (instagramHandle) updateFields.instagram_handle = instagramHandle;
+        if (bioText) updateFields.bio_text = bioText;
+        const { error: updateErr } = await supabase
+          .from("profiles")
+          .update(updateFields)
+          .eq("wallet_address", walletAddress);
+        if (updateErr) console.warn("Profile extension update failed:", updateErr);
+      } catch (e) {
+        console.warn("Profile extension error:", e);
       }
     } else {
       // === LOOKUP MODE ===
