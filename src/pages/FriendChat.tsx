@@ -10,6 +10,27 @@ import {
   Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription,
 } from "@/components/ui/drawer";
 
+// Animated typing dots component
+const TypingIndicator = () => (
+  <motion.div
+    initial={{ opacity: 0, y: 6 }}
+    animate={{ opacity: 1, y: 0 }}
+    exit={{ opacity: 0, y: 6 }}
+    className="flex justify-start"
+  >
+    <div className="flex items-center gap-1 rounded-2xl bg-card px-4 py-3 border border-border/50">
+      {[0, 1, 2].map((i) => (
+        <motion.span
+          key={i}
+          className="h-1.5 w-1.5 rounded-full bg-muted-foreground"
+          animate={{ opacity: [0.3, 1, 0.3], y: [0, -3, 0] }}
+          transition={{ duration: 0.8, repeat: Infinity, delay: i * 0.18 }}
+        />
+      ))}
+    </div>
+  </motion.div>
+);
+
 interface Message {
   id: string;
   text: string;
@@ -44,7 +65,10 @@ const FriendChat = () => {
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [isTyping, setIsTyping] = useState(false);
+  const [friendIsTyping, setFriendIsTyping] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const scrollToBottom = useCallback(() => {
     setTimeout(() => {
@@ -180,6 +204,8 @@ const FriendChat = () => {
             (dm.sender_id === myProfileId && dm.receiver_id === friendId) ||
             (dm.sender_id === friendId && dm.receiver_id === myProfileId);
           if (!isRelevant) return;
+          // Hide friend typing indicator when their message arrives
+          if (dm.sender_id === friendId) setFriendIsTyping(false);
           // Avoid duplicates
           setMessages(prev => {
             if (prev.some(m => m.id === dm.id)) return prev;
@@ -198,11 +224,27 @@ const FriendChat = () => {
     return () => { supabase.removeChannel(channel); };
   }, [myProfileId, friendId, scrollToBottom]);
 
+  // Show "user is typing" dot while composing
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setInputValue(e.target.value);
+    setIsTyping(e.target.value.length > 0);
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    if (e.target.value.length > 0) {
+      typingTimeoutRef.current = setTimeout(() => setIsTyping(false), 2000);
+    }
+  };
+
   const handleSend = async () => {
     const text = inputValue.trim();
     if (!text || !myProfileId || !friendId || sending) return;
     setSending(true);
     setInputValue("");
+    setIsTyping(false);
+
+    // Show typing indicator on friend's side after sending (for bot replies)
+    setFriendIsTyping(true);
+    // Auto-hide typing indicator after 8s as safety fallback
+    const typingFallback = setTimeout(() => setFriendIsTyping(false), 8000);
 
     try {
       const resp = await supabase.functions.invoke("direct-chat", {
@@ -212,8 +254,10 @@ const FriendChat = () => {
     } catch {
       // Re-add text on failure
       setInputValue(text);
+      setFriendIsTyping(false);
     } finally {
       setSending(false);
+      clearTimeout(typingFallback);
     }
   };
 
@@ -302,9 +346,15 @@ const FriendChat = () => {
           })}
         </AnimatePresence>
 
-        {messages.length === 0 && (
+        {/* Typing indicators */}
+        <AnimatePresence>
+          {friendIsTyping && <TypingIndicator key="friend-typing" />}
+        </AnimatePresence>
+
+        {messages.length === 0 && !friendIsTyping && (
           <p className="py-12 text-center font-mono text-[11px] italic text-muted-foreground/50">
             Say something to keep the vibe going...
+
           </p>
         )}
       </div>
@@ -314,7 +364,7 @@ const FriendChat = () => {
         <div className="flex gap-2">
           <Input
             value={inputValue}
-            onChange={e => setInputValue(e.target.value)}
+            onChange={handleInputChange}
             onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
             placeholder="Type a message..."
             maxLength={500}
