@@ -1,119 +1,58 @@
 
 
-## Fix Verdict Race Condition, Add Feedback, Chat Enhancements, and Synchronized Start
+## Fix Mobile Keyboard Behavior and Persistent Timer
 
-### The Problems
+### Problem 1: Keyboard pushes entire page up
+Currently, the VibeMatch chatting layout uses `h-[100dvh]` on the outer container. On mobile, when the keyboard opens, `100dvh` shrinks to the visible viewport, causing the entire page (including the chat messages area) to compress and scroll up. The user wants only the input field to stay above the keyboard, while the chat messages remain in their natural position.
 
-1. **"Maybe next time" bug**: When User A votes first, the backend returns `{ mutual: false, waiting: true }` because User B hasn't voted yet. The client immediately shows the "Maybe next time" result screen instead of waiting for User B. This is the core bug.
-
-2. **No feedback screen**: After the timer ends, users go straight to Vibe/Nah buttons. There's no screen where users can leave a short message/feedback before voting. The bot (Amara) has this via AI-generated feedback, but human matches don't.
-
-3. **No synchronized start**: Both users' timers start independently whenever they enter the chat phase, causing uneven session lengths.
-
-4. **No quick-access smileys or text assistance**: The chat input is plain text only.
+### Problem 2: Timer scrolls off screen
+The `GameTimer` is inside the scrollable chat layout. When the keyboard opens and compresses the view, the timer can be pushed off screen.
 
 ---
 
-### Fix 1: Verdict Waiting + Polling (Critical Bug Fix)
+### Solution
 
-**Root cause**: The client receives `{ waiting: true }` from `vibe-verdict` when the partner hasn't voted yet, but treats it as a final "not mutual" result.
+**1. Use `h-[100vh]` (fixed) instead of `h-[100dvh]` (dynamic) for the chat phase container**
 
-**Solution**: Add a new phase `"waiting-verdict"` between verdict submission and result display. The client polls the session until the partner also submits their verdict.
+The key insight: `100dvh` *reacts* to the keyboard, shrinking the container. `100vh` stays fixed at the full screen height. Combined with the browser's native scroll-into-view behavior for focused inputs, only the input area gets pushed up by the keyboard while the rest of the page stays put.
 
-**Changes**:
-- `src/pages/VibeMatch.tsx`: Add a `"waiting-verdict"` phase. After submitting verdict, if response has `waiting: true`, enter this phase and poll `vibe-verdict-poll` (a new lightweight endpoint) every 2 seconds until both verdicts are in.
-- New edge function `supabase/functions/vibe-verdict-poll/index.ts`: Takes `sessionId` and `walletAddress`, checks if both verdicts are submitted. If yes, runs the mutual logic (friendship creation, Tapestry follows, vibe score increments) and returns the final result. If not, returns `{ waiting: true }`.
-- Update `supabase/functions/vibe-verdict/index.ts`: When the second user submits and both verdicts are in, process the mutual logic as before. The first user's poll will also detect completion and get the result.
+**2. Make the timer sticky/fixed during chat**
 
-**UI during waiting**: Show a "Waiting for [partnerName] to decide..." screen with a gentle animation.
+Move the timer to a fixed position at the top of the screen (or make it a compact floating element) so it never leaves the viewport regardless of keyboard state.
 
 ---
 
-### Fix 2: Post-Session Feedback Screen
+### Changes
 
-**Flow change**: Timer ends -> Feedback screen (write a short message + pick Vibe/Nah) -> Waiting for partner -> Result screen showing both feedbacks.
+**File: `src/pages/VibeMatch.tsx`**
 
-**Changes**:
-- New component `src/components/play/VibeFeedback.tsx`: Shows a text input for a short feedback message (max 140 chars), the partner's `display_name` (not real_name), and the Vibe/Nah buttons. Submitting sends both the feedback text and the verdict together.
-- `src/pages/VibeMatch.tsx`: Replace the current `VibeVerdict` component with `VibeFeedback`. The phase flow becomes: `searching -> chatting -> feedback -> waiting-verdict -> result`.
-- `supabase/functions/vibe-verdict/index.ts`: Accept an optional `feedback` field. Store it in the session (new columns `user_a_feedback` and `user_b_feedback`).
-- Database migration: Add `user_a_feedback TEXT` and `user_b_feedback TEXT` columns to `vibe_sessions`.
-- Result screen: Display both users' feedback messages alongside the Vibe/Nah outcome, using `display_name`.
+- Change the outer container from `h-[100dvh]` to `h-[100vh]` specifically during the `chatting` phase. This prevents the dynamic viewport resize from compressing the entire layout when the keyboard opens.
+- Move the `GameTimer` into a sticky/fixed header bar at the top of the chat phase, outside the scrollable content area. Make it compact: a small bar with the timer count and progress, pinned to the top.
 
----
+**File: `src/components/demo/ChatZone.tsx`**
 
-### Fix 3: Synchronized Countdown Start
+- Add `position: fixed; bottom: 0;` behavior to the input area using CSS. When the keyboard opens on mobile, the browser will naturally push the fixed-bottom input above the keyboard.
+- Actually, a cleaner approach: Keep the current flex layout but ensure the outer container uses `100vh` (not `100dvh`). The input section at the bottom will naturally sit at the bottom of the full viewport. When the keyboard opens, the browser scrolls the focused input into view, pushing only the input up -- the chat messages stay in their scroll position.
+- Add `overflow: hidden` on the body during chat to prevent any outer scroll.
 
-**Problem**: Each user's `GameTimer` starts as soon as they enter the `chatting` phase, but they may enter at different times.
+**Specific implementation:**
 
-**Solution**: Add a `"countdown"` phase with a 3-2-1-GO animation. The session stores a `chat_starts_at` timestamp set 4 seconds in the future when the match is confirmed. Both clients sync to this timestamp.
+1. **VibeMatch.tsx chatting phase layout:**
+   - Outer: `h-screen` (equivalent to `100vh`, fixed)
+   - Timer: Compact sticky bar at the very top with `sticky top-0 z-20`
+   - ChatZone: `flex-1 min-h-0 overflow-hidden`
+   - This keeps the timer always visible at the top
 
-**Changes**:
-- `supabase/functions/vibe-match/index.ts` and `supabase/functions/vibe-match-poll/index.ts`: When a match is confirmed, set `chat_starts_at` on the session (a new column) to `now() + 4 seconds`. Return this timestamp in the match response.
-- Database migration: Add `chat_starts_at TIMESTAMPTZ` column to `vibe_sessions`.
-- `src/pages/VibeMatch.tsx`: New `"countdown"` phase between `searching` and `chatting`. On match, calculate the delay until `chat_starts_at`, show "3... 2... 1... GO!" animation timed to that moment, then transition to `chatting`.
-- New component `src/components/play/MatchCountdown.tsx`: Renders the 3-2-1-GO animation with Framer Motion.
+2. **ChatZone.tsx input area:**
+   - Keep the current `shrink-0` on the input section
+   - The `flex-1 overflow-y-auto` on the messages area means only messages scroll
+   - When keyboard opens with `100vh` container, the browser handles input visibility natively
 
----
+3. **Timer as a compact inline element:**
+   - Instead of the current full GameTimer component, render a slim inline version during vibe chat: just the time number and a thin progress bar, sitting in a sticky header
+   - This ensures it never leaves the screen
 
-### Fix 4: Quick Smileys in Chat
-
-**Changes**:
-- Update `src/components/demo/ChatZone.tsx`: Add a row of 5 emoji buttons above the text input. Tapping one immediately sends that emoji as a message.
-- Emojis: fire, laughing face, heart eyes, thumbs up, 100 (the 5 most universally used quick-reaction emojis).
-- Small, tappable buttons that don't take up much space.
-
----
-
-### Fix 5: Predictive Text Suggestions
-
-**Changes**:
-- Update `src/components/demo/ChatZone.tsx`: Add a suggestion bar above the input that shows 2-3 word completions based on what the user is typing.
-- Client-side only: Use a small dictionary of common conversational phrases. When the user types 2+ characters, filter matching phrases and show as tappable chips.
-- Tapping a suggestion fills the input with that word/phrase.
-- Common phrases list: ~50 phrases like "what's up", "that's cool", "where are you from", "nice to meet you", "haha", "for real", etc.
-
----
-
-### Fix 6: Auto-Correct Suggestions (Lightweight)
-
-This is the most complex feature requested. To keep it simple and effective:
-
-**Changes**:
-- Add a toggle in the chat header to enable/disable auto-correct (on by default).
-- When the user finishes typing a word (hits space), check it against a basic word list. If not found, highlight it with an underline.
-- Tapping the highlighted word shows a small popover with 1-2 suggestions. Tapping a suggestion replaces the word; tapping elsewhere dismisses it.
-- This uses a client-side dictionary approach -- no AI calls needed for basic spell checking.
-
----
-
-### Technical Summary of All Files
-
-| File | Change |
-|------|--------|
-| `supabase/migrations/...` | Add `user_a_feedback`, `user_b_feedback`, `chat_starts_at` to `vibe_sessions` |
-| `supabase/functions/vibe-verdict/index.ts` | Accept `feedback` field, save to session, fix race condition handling |
-| `supabase/functions/vibe-verdict-poll/index.ts` | **New** -- poll for partner's verdict, process mutual logic when both are in |
-| `supabase/functions/vibe-match/index.ts` | Set `chat_starts_at` when match confirmed |
-| `supabase/functions/vibe-match-poll/index.ts` | Return `chat_starts_at` in match response |
-| `src/pages/VibeMatch.tsx` | New phases: `countdown`, `feedback`, `waiting-verdict`. Updated flow and polling |
-| `src/components/play/VibeFeedback.tsx` | **New** -- feedback input + verdict buttons |
-| `src/components/play/MatchCountdown.tsx` | **New** -- 3-2-1-GO countdown animation |
-| `src/components/demo/ChatZone.tsx` | Add emoji bar, predictive text suggestions, basic auto-correct toggle |
-| `src/components/play/VibeVerdict.tsx` | Deprecated (replaced by VibeFeedback) |
-
-### Phase Flow (Updated)
-
-```text
-searching -> countdown (3-2-1-GO) -> chatting (60s) -> feedback (write + vote) -> waiting-verdict (poll) -> result (show both feedbacks)
-```
-
-### Priority Order
-
-1. Verdict race condition fix (critical bug)
-2. Synchronized countdown
-3. Feedback screen
-4. Quick smileys
-5. Predictive text
-6. Auto-correct
-
+### Technical Notes
+- Using `100vh` instead of `100dvh` is the standard pattern used by WhatsApp Web, Telegram, etc. for chat interfaces
+- The `visualViewport` API could be used as an alternative, but `100vh` is simpler and more reliable
+- The timer becomes a compact sticky element (not absolutely positioned) so it flows with the layout but never scrolls away
