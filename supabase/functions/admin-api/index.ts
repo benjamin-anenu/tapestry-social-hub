@@ -9,7 +9,7 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { action, walletAddress, value } = await req.json();
+    const { action, walletAddress, value, configs } = await req.json();
     if (!walletAddress) throw new Error("walletAddress required");
 
     const supabase = createClient(
@@ -65,12 +65,13 @@ Deno.serve(async (req) => {
         .select("*", { count: "exact", head: true })
         .in("status", ["waiting", "active"]);
 
-      // Matching mode
-      const { data: modeSetting } = await supabase
+      // All settings
+      const { data: allSettings } = await supabase
         .from("app_settings")
-        .select("value")
-        .eq("key", "matching_mode")
-        .single();
+        .select("key, value");
+
+      const settingsMap: Record<string, string> = {};
+      for (const s of allSettings ?? []) settingsMap[s.key] = s.value;
 
       // All non-bot users
       const { data: users } = await supabase
@@ -83,7 +84,14 @@ Deno.serve(async (req) => {
         totalUsers: totalUsers ?? 0,
         vibedUsers: vibedUserIds.size,
         activeSessions: activeSessions ?? 0,
-        matchingMode: modeSetting?.value ?? "auto",
+        matchingMode: settingsMap["matching_mode"] ?? "auto",
+        botConfig: {
+          bot_model: settingsMap["bot_model"] ?? "google/gemini-3-flash-preview",
+          bot_max_tokens: settingsMap["bot_max_tokens"] ?? "150",
+          bot_max_nudges: settingsMap["bot_max_nudges"] ?? "3",
+          bot_prompt_vibe: settingsMap["bot_prompt_vibe"] ?? "",
+          bot_prompt_dm: settingsMap["bot_prompt_dm"] ?? "",
+        },
         users: users ?? [],
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -100,6 +108,32 @@ Deno.serve(async (req) => {
         .eq("key", "matching_mode");
 
       return new Response(JSON.stringify({ success: true, matchingMode: value }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (action === "set_bot_config") {
+      if (!configs || typeof configs !== "object") throw new Error("configs object required");
+      const allowedKeys = ["bot_model", "bot_max_tokens", "bot_max_nudges", "bot_prompt_vibe", "bot_prompt_dm"];
+      
+      for (const [key, val] of Object.entries(configs)) {
+        if (!allowedKeys.includes(key)) continue;
+        const strVal = String(val);
+        // Upsert: update if exists, insert if not
+        const { data: existing } = await supabase
+          .from("app_settings")
+          .select("key")
+          .eq("key", key)
+          .maybeSingle();
+        
+        if (existing) {
+          await supabase.from("app_settings").update({ value: strVal }).eq("key", key);
+        } else {
+          await supabase.from("app_settings").insert({ key, value: strVal });
+        }
+      }
+
+      return new Response(JSON.stringify({ success: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
