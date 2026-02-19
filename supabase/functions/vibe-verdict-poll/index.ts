@@ -62,18 +62,24 @@ Deno.serve(async (req) => {
       if (mutual) {
         const partnerId = isA ? session.user_b_id : session.user_a_id;
 
-        // Create mutual friendship
-        await supabase.from("friendships").insert([
+        // Create mutual friendship with error logging
+        const { error: friendErr } = await supabase.from("friendships").insert([
           { follower_id: profile.id, following_id: partnerId, mutual: true },
           { follower_id: partnerId, following_id: profile.id, mutual: true },
         ]);
+        if (friendErr) {
+          console.error("Friendship insert error:", JSON.stringify(friendErr));
+        }
 
-        // Create conversation
+        // Create conversation with upsert
         const [pA, pB] = [profile.id, partnerId].sort();
-        await supabase.from("conversations").upsert(
+        const { error: convoErr } = await supabase.from("conversations").upsert(
           { participant_a: pA, participant_b: pB, vibe_session_id: sessionId },
           { onConflict: "participant_a,participant_b" }
         );
+        if (convoErr) {
+          console.error("Conversation upsert error:", JSON.stringify(convoErr));
+        }
 
         // Tapestry follow
         const apiKey = Deno.env.get("TAPESTRY_API_KEY");
