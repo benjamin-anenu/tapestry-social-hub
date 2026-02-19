@@ -52,33 +52,28 @@ const GameTimer = ({
   }, [timeLeft, onTick]);
 
   return (
-    <div className="flex flex-col items-center gap-2">
-      <div className="flex items-center gap-3">
-        <Clock
-          className={`h-4 w-4 ${
-            isUrgent ? "text-destructive" : isWarning ? "text-yellow-500" : "text-primary"
-          }`}
-        />
-        <motion.span
-          key={timeLeft}
-          initial={{ scale: 1.3, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          className={`font-mono text-4xl font-bold tabular-nums ${
-            isUrgent
-              ? "text-destructive animate-pulse"
-              : isWarning
-              ? "text-yellow-500"
-              : "text-foreground text-glow-blue"
-          }`}
-          style={isUrgent ? { textShadow: "0 0 20px hsla(340, 100%, 50%, 0.5)" } : {}}
-        >
-          {String(timeLeft).padStart(2, "0")}
-        </motion.span>
-        <span className="font-mono text-[10px] tracking-widest text-muted-foreground">SEC</span>
-      </div>
-
+    <div className="flex items-center gap-2 w-full">
+      <Clock
+        className={`h-3.5 w-3.5 shrink-0 ${
+          isUrgent ? "text-destructive" : isWarning ? "text-yellow-500" : "text-primary"
+        }`}
+      />
+      <motion.span
+        key={timeLeft}
+        initial={{ scale: 1.2, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        className={`font-mono text-lg font-bold tabular-nums shrink-0 ${
+          isUrgent
+            ? "text-destructive animate-pulse"
+            : isWarning
+            ? "text-yellow-500"
+            : "text-foreground"
+        }`}
+      >
+        {String(timeLeft).padStart(2, "0")}s
+      </motion.span>
       {/* Progress bar */}
-      <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
+      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
         <motion.div
           className="h-full rounded-full"
           style={{
