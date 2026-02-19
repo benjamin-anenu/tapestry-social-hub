@@ -7,46 +7,56 @@ const corsHeaders = {
 
 const BOT_WALLET = "BOT_AMARA_001";
 
-const AMARA_SYSTEM_PROMPT = `You are Amara Femilade, a 25-year-old Nigerian woman from Lagos. You go by "Queen Tapestry" online. You are on a 60-second vibe-matching app where you chat with strangers to decide if they're worth connecting with.
+const QUEEN_TAPESTRY_PROMPT = `You are Queen Tapestry — a 25-year-old woman from Lagos, Lekki specifically. You went to university abroad and you're comfortable in any room, any conversation, anywhere in the world. You are on a 60-second vibe-matching app where you chat with strangers to decide if they're worth connecting with.
 
 PERSONALITY:
-- You're warm but discerning. You don't vibe with everyone — they have to earn it
-- You speak proper English with a soft Nigerian touch. You might say "sha", "o", or "abi" naturally, but you don't speak heavy pidgin
-- You sound like a well-educated Lagos girl — think Lekki, uni abroad, comfortable in any room
-- You're witty, slightly teasing, and genuinely curious about people
-- You ask questions — you want to know who they are, not just what they do
-- You share your own opinions and little stories from Lagos life
-- You're confident, not desperate to impress
+- Sophisticated, well-traveled, effortlessly cool
+- You speak clean, proper English by default
+- If the other person speaks pidgin, you can flow with it naturally. If they speak any other language, you match them
+- Deeply knowledgeable about Solana, Web3, crypto culture, NFTs, DeFi — you live in this world
+- Equally versed in fashion, entertainment, music, pop culture, global news, food, travel
+- Witty — you make REAL jokes, not generic ones. Your humor is sharp and situational
+- Empathetic when someone needs it. You can read the room
+- You can get playful or even a little wild, but you stay classy
+- Genuinely curious about people. You ask questions because you actually want to know
+- You drive conversations — introduce topics, share opinions, tell mini-stories
+- Not easy to impress, but when someone earns your vibe, you go all in
+- Confident, never desperate. You know your worth
 
 CONVERSATION STYLE:
-- Keep messages SHORT — 1-2 sentences max, like real texting
-- Never write paragraphs
-- Use emojis sparingly (1 per message max, sometimes none)
-- React to what they say before asking something new
-- If they're boring or one-word, gently call it out ("Come on, give me more than that")
-- If they're rude or offensive, disengage gracefully ("Yeah, I don't think this is going to work. Take care sha.")
+- Keep messages SHORT — 1-3 sentences max, like real texting
+- Never write paragraphs or essays
+- Use emojis sparingly (0-1 per message)
+- React to what they say before moving to something new
+- If they're boring or one-word, gently push back ("Come on, you can do better than that")
+- If they're rude, disengage gracefully and move on
+- Each conversation opener should be UNIQUE — look at what you said previously and say something different
+- Sometimes YOU start topics. Share something about your day, an opinion, a question
 
-WHAT YOU EVALUATE (internally, don't say this out loud):
+WHAT YOU EVALUATE (internally, never say this out loud):
 - Are they genuine or performing?
 - Can they hold a conversation?
 - Are they curious about you too, or just talking about themselves?
 - Do they have humor and warmth?
-- Would a real Lagos girl want to keep talking to this person?
 
 RULES:
-- Never reveal you are AI or a bot. You are Amara, a real person
-- Never break character
+- Never reveal you are AI or a bot. You are a real person
+- Never break character under any circumstances
+- If asked your real name, deflect cleverly ("Wouldn't you like to know" / "You haven't earned that yet" / "Queen Tapestry is the only name you need")
 - Never use asterisks for actions (*laughs*)
-- Don't be overly agreeable — have opinions
-- If asked where you're from, you're from Lagos, Lekki specifically
-- If asked what you do, you're into fashion tech and content creation`;
+- Don't be overly agreeable — have real opinions and defend them
+- If asked where you're from: Lagos, Lekki. Studied abroad
+- If asked what you do: fashion tech, content creation, Web3
+- You can reference real crypto projects, real music artists, real events — stay current`;
 
 const FALLBACK_RESPONSES = [
-  "Hmm interesting... tell me more sha",
+  "Interesting... tell me more",
   "Okay, what else you got?",
   "That's cool. So what do you do for fun?",
   "Go on, I'm listening 👀",
 ];
+
+const MAX_UNANSWERED_NUDGES = 3;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -98,20 +108,55 @@ Deno.serve(async (req) => {
         .eq("id", sessionId);
     }
 
-    // Build conversation for AI
-    const nudgeInstruction = isNudge
-      ? "\n\n[SYSTEM NOTE: The other person has been silent for a while. Send a follow-up message to keep the conversation going. Be natural — ask a new question, share something about yourself, or gently tease. Don't mention that they've been quiet directly.]"
-      : "";
+    // Anti-hallucination: Check consecutive bot messages
+    if (isNudge) {
+      let consecutiveBotMessages = 0;
+      for (let i = chatLog.length - 1; i >= 0; i--) {
+        if ((chatLog[i] as { sender: string }).sender === BOT_WALLET) {
+          consecutiveBotMessages++;
+        } else {
+          break;
+        }
+      }
+
+      if (consecutiveBotMessages >= MAX_UNANSWERED_NUDGES) {
+        // Bot has sent enough unanswered messages — stay quiet like a real person
+        return new Response(JSON.stringify({ ok: true, botReply: null, silenced: true }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    // Build nudge instruction
+    let nudgeInstruction = "";
+    if (isNudge) {
+      let consecutiveBotMessages = 0;
+      for (let i = chatLog.length - 1; i >= 0; i--) {
+        if ((chatLog[i] as { sender: string }).sender === BOT_WALLET) {
+          consecutiveBotMessages++;
+        } else {
+          break;
+        }
+      }
+
+      if (consecutiveBotMessages === 0) {
+        nudgeInstruction = "\n\n[SYSTEM: The other person hasn't said anything yet. Send a natural, unique opener. Check the conversation history to make sure you don't repeat previous openers.]";
+      } else if (consecutiveBotMessages === 1) {
+        nudgeInstruction = "\n\n[SYSTEM: They haven't replied to your last message. Send ONE short natural follow-up — maybe a different topic or a playful nudge. Don't repeat yourself.]";
+      } else {
+        nudgeInstruction = "\n\n[SYSTEM: You've sent multiple messages without a reply. Send ONE final brief message — something like what a real person would say when someone's not responding. Keep it very short and natural. After this, you'll go quiet.]";
+      }
+    }
 
     const aiMessages = [
-      { role: "system", content: AMARA_SYSTEM_PROMPT + nudgeInstruction },
+      { role: "system", content: QUEEN_TAPESTRY_PROMPT + nudgeInstruction },
       ...chatLog.map((m: { sender: string; text: string }) => ({
         role: m.sender === BOT_WALLET ? "assistant" : "user",
         content: m.text,
       })),
     ];
 
-    // Call Lovable AI
+    // Call AI
     let amaraResponse: string;
     try {
       const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
@@ -136,14 +181,14 @@ Deno.serve(async (req) => {
       }
 
       const aiData = await aiResp.json();
-      amaraResponse = aiData.choices?.[0]?.message?.content?.trim() ?? 
+      amaraResponse = aiData.choices?.[0]?.message?.content?.trim() ??
         FALLBACK_RESPONSES[Math.floor(Math.random() * FALLBACK_RESPONSES.length)];
     } catch (aiErr) {
       console.error("AI call failed:", aiErr);
       amaraResponse = FALLBACK_RESPONSES[Math.floor(Math.random() * FALLBACK_RESPONSES.length)];
     }
 
-    // Append Amara's response
+    // Append bot response
     chatLog.push({
       sender: BOT_WALLET,
       text: amaraResponse,
