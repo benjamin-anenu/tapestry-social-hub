@@ -1,79 +1,119 @@
 
 
-## Fix Admin Data Display + User Matching Logic
+## Fix Verdict Race Condition, Add Feedback, Chat Enhancements, and Synchronized Start
 
-### Issue 1: Admin Dashboard - Missing Data
+### The Problems
 
-**Root causes identified:**
+1. **"Maybe next time" bug**: When User A votes first, the backend returns `{ mutual: false, waiting: true }` because User B hasn't voted yet. The client immediately shows the "Maybe next time" result screen instead of waiting for User B. This is the core bug.
 
-1. **display_name is never saved**: During profile creation in `tapestry-identity`, `display_name` is only set when the user provides extended fields AND a username (line 182: `updateFields.display_name = username`). However, the profile row is often auto-created earlier by `vibe-match` (line 58-68) with just the wallet slice as `username` and no `display_name`. The Tapestry create call then tries to `.update()` on the profile but the condition `if (realName || country || xHandle || instagramHandle || bioText)` at line 171 gates it -- if the user only fills in a nickname and nothing else, `display_name` never gets set.
+2. **No feedback screen**: After the timer ends, users go straight to Vibe/Nah buttons. There's no screen where users can leave a short message/feedback before voting. The bot (Amara) has this via AI-generated feedback, but human matches don't.
 
-2. **tapestry_id is never written**: No code anywhere writes the `tapestry_id` column. The Tapestry username is stored in `username` (via the wallet slice auto-create) but the actual Tapestry profile ID is never persisted to the `tapestry_id` column.
+3. **No synchronized start**: Both users' timers start independently whenever they enter the chat phase, causing uneven session lengths.
 
-3. **First setup data not saving**: The `tapestry-identity` edge function only saves extended fields (real_name, country, etc.) when `username` is provided in the request body (create mode, line 171). But the profile row may have been auto-created by `vibe-match` with a random UUID as `user_id`, and the `.update().eq("wallet_address", walletAddress)` should work. The real issue is the condition at line 171 -- it requires at least one of the optional fields to be truthy. If the user only enters a nickname, the update block is skipped entirely, meaning `display_name` is never set.
+4. **No quick-access smileys or text assistance**: The chat input is plain text only.
 
-**Fixes:**
+---
 
-- **tapestry-identity edge function**: 
-  - Always save `display_name = username` and `tapestry_id = username` during create mode (remove the gating condition that requires optional fields)
-  - Also update the `username` column to the Tapestry nickname (currently it stays as the wallet slice from auto-creation)
-  
-- **admin-api edge function**: No changes needed -- it already selects all relevant columns
+### Fix 1: Verdict Waiting + Polling (Critical Bug Fix)
 
-### Issue 2: User Matching - Two Real Users Never Match
+**Root cause**: The client receives `{ waiting: true }` from `vibe-verdict` when the partner hasn't voted yet, but treats it as a final "not mutual" result.
 
-**Root causes identified (critical bugs):**
+**Solution**: Add a new phase `"waiting-verdict"` between verdict submission and result display. The client polls the session until the partner also submits their verdict.
 
-1. **Race condition -- both users create sessions simultaneously**: When User A calls `vibe-match`, it marks itself online and looks for candidates. If User B calls at the same time, both see each other and BOTH create a new `vibe_sessions` row with each other. This creates duplicate sessions. Worse, the active session filter then excludes them from future matches.
+**Changes**:
+- `src/pages/VibeMatch.tsx`: Add a `"waiting-verdict"` phase. After submitting verdict, if response has `waiting: true`, enter this phase and poll `vibe-verdict-poll` (a new lightweight endpoint) every 2 seconds until both verdicts are in.
+- New edge function `supabase/functions/vibe-verdict-poll/index.ts`: Takes `sessionId` and `walletAddress`, checks if both verdicts are submitted. If yes, runs the mutual logic (friendship creation, Tapestry follows, vibe score increments) and returns the final result. If not, returns `{ waiting: true }`.
+- Update `supabase/functions/vibe-verdict/index.ts`: When the second user submits and both verdicts are in, process the mutual logic as before. The first user's poll will also detect completion and get the result.
 
-2. **Stale `is_online` flag**: The `is_online` flag and `last_seen` are only updated by the heartbeat (every 30s) and when `vibe-match` is called. But the heartbeat only starts on the VibeMatch page. If a user is on the Play hub page, they're not sending heartbeats, so their `is_online` could be stale/false, making them invisible to the matcher.
+**UI during waiting**: Show a "Waiting for [partnerName] to decide..." screen with a gentle animation.
 
-3. **Freshness window too tight**: The 2-minute freshness window (`FRESHNESS_WINDOW_MS`) means if a user's `last_seen` is even slightly older than 2 minutes, they won't appear as a candidate. Since heartbeats are 30s apart and the user might navigate to the vibe match page at slightly different times, this window is too restrictive.
+---
 
-4. **No "waiting room" pattern**: The current approach is fire-and-forget -- User A calls `vibe-match`, if no one is found, it falls back to a bot. There's no queuing mechanism where User A waits for a human. Both users must call the function at nearly the same instant, and both must have fresh `last_seen` timestamps.
+### Fix 2: Post-Session Feedback Screen
 
-**Fix -- Implement a proper waiting/polling pattern:**
+**Flow change**: Timer ends -> Feedback screen (write a short message + pick Vibe/Nah) -> Waiting for partner -> Result screen showing both feedbacks.
 
-- **vibe-match edge function**: Instead of immediately falling back to a bot, create a "waiting" session (user_a only, user_b = null). On subsequent calls, first check for any waiting sessions from OTHER users and join those. Add a configurable wait timeout (e.g., 15 seconds of polling) before bot fallback.
+**Changes**:
+- New component `src/components/play/VibeFeedback.tsx`: Shows a text input for a short feedback message (max 140 chars), the partner's `display_name` (not real_name), and the Vibe/Nah buttons. Submitting sends both the feedback text and the verdict together.
+- `src/pages/VibeMatch.tsx`: Replace the current `VibeVerdict` component with `VibeFeedback`. The phase flow becomes: `searching -> chatting -> feedback -> waiting-verdict -> result`.
+- `supabase/functions/vibe-verdict/index.ts`: Accept an optional `feedback` field. Store it in the session (new columns `user_a_feedback` and `user_b_feedback`).
+- Database migration: Add `user_a_feedback TEXT` and `user_b_feedback TEXT` columns to `vibe_sessions`.
+- Result screen: Display both users' feedback messages alongside the Vibe/Nah outcome, using `display_name`.
 
-- **New vibe-match-poll edge function**: The client polls every 2-3 seconds. The function checks if anyone is waiting, and if so, pairs them. If the user has been waiting longer than 15-20 seconds with no match, then fall back to bot.
+---
 
-- **VibeMatch page**: Update the client to poll `vibe-match-poll` every 2-3 seconds while in "searching" phase, instead of doing a single fire-and-forget call.
+### Fix 3: Synchronized Countdown Start
 
-- **Increase freshness window** to 5 minutes to be more forgiving.
+**Problem**: Each user's `GameTimer` starts as soon as they enter the `chatting` phase, but they may enter at different times.
 
-- **Start heartbeat on Play page** (not just VibeMatch) so users are marked online before they click "Make Friends".
+**Solution**: Add a `"countdown"` phase with a 3-2-1-GO animation. The session stores a `chat_starts_at` timestamp set 4 seconds in the future when the match is confirmed. Both clients sync to this timestamp.
 
-### Technical Details
+**Changes**:
+- `supabase/functions/vibe-match/index.ts` and `supabase/functions/vibe-match-poll/index.ts`: When a match is confirmed, set `chat_starts_at` on the session (a new column) to `now() + 4 seconds`. Return this timestamp in the match response.
+- Database migration: Add `chat_starts_at TIMESTAMPTZ` column to `vibe_sessions`.
+- `src/pages/VibeMatch.tsx`: New `"countdown"` phase between `searching` and `chatting`. On match, calculate the delay until `chat_starts_at`, show "3... 2... 1... GO!" animation timed to that moment, then transition to `chatting`.
+- New component `src/components/play/MatchCountdown.tsx`: Renders the 3-2-1-GO animation with Framer Motion.
 
-**Files to modify:**
+---
 
-1. `supabase/functions/tapestry-identity/index.ts`
-   - Remove the conditional gate at line 171 -- always update profile fields during create mode
-   - Set `display_name`, `tapestry_id`, and proper `username` on the profiles row
+### Fix 4: Quick Smileys in Chat
 
-2. `supabase/functions/vibe-match/index.ts` -- Major rewrite:
-   - Step 1: Mark self online
-   - Step 2: Check for existing waiting sessions from other users (where `user_b_id IS NULL` and `status = 'waiting'`)
-   - Step 3: If found, join that session (set `user_b_id`, status = 'active'), return matched
-   - Step 4: If not found, check for online users and create a session directly  
-   - Step 5: If no one online, create a waiting session (`user_b_id = NULL`, status = 'waiting')
-   - Step 6: Return `{ status: "waiting", sessionId }` so the client knows to poll
+**Changes**:
+- Update `src/components/demo/ChatZone.tsx`: Add a row of 5 emoji buttons above the text input. Tapping one immediately sends that emoji as a message.
+- Emojis: fire, laughing face, heart eyes, thumbs up, 100 (the 5 most universally used quick-reaction emojis).
+- Small, tappable buttons that don't take up much space.
 
-3. **New file: `supabase/functions/vibe-match-poll/index.ts`**
-   - Client calls this every 2-3 seconds while waiting
-   - Checks if the user's waiting session has been claimed (user_b populated, status = 'active')
-   - If waiting too long (>20 seconds), auto-match with bot
-   - Returns current status: waiting, matched (with partner info), or bot-matched
+---
 
-4. `src/pages/VibeMatch.tsx`
-   - Update matching flow: after initial `vibe-match` call, if status = "waiting", start polling `vibe-match-poll` every 2-3 seconds
-   - Show "Searching for players..." UI during polling
-   - When matched, transition to chat phase
+### Fix 5: Predictive Text Suggestions
 
-5. `src/pages/Play.tsx`
-   - Start the heartbeat on this page too so users are marked online before entering vibe match
+**Changes**:
+- Update `src/components/demo/ChatZone.tsx`: Add a suggestion bar above the input that shows 2-3 word completions based on what the user is typing.
+- Client-side only: Use a small dictionary of common conversational phrases. When the user types 2+ characters, filter matching phrases and show as tappable chips.
+- Tapping a suggestion fills the input with that word/phrase.
+- Common phrases list: ~50 phrases like "what's up", "that's cool", "where are you from", "nice to meet you", "haha", "for real", etc.
 
-6. `supabase/functions/vibe-match-heartbeat/index.ts`
-   - No changes needed
+---
+
+### Fix 6: Auto-Correct Suggestions (Lightweight)
+
+This is the most complex feature requested. To keep it simple and effective:
+
+**Changes**:
+- Add a toggle in the chat header to enable/disable auto-correct (on by default).
+- When the user finishes typing a word (hits space), check it against a basic word list. If not found, highlight it with an underline.
+- Tapping the highlighted word shows a small popover with 1-2 suggestions. Tapping a suggestion replaces the word; tapping elsewhere dismisses it.
+- This uses a client-side dictionary approach -- no AI calls needed for basic spell checking.
+
+---
+
+### Technical Summary of All Files
+
+| File | Change |
+|------|--------|
+| `supabase/migrations/...` | Add `user_a_feedback`, `user_b_feedback`, `chat_starts_at` to `vibe_sessions` |
+| `supabase/functions/vibe-verdict/index.ts` | Accept `feedback` field, save to session, fix race condition handling |
+| `supabase/functions/vibe-verdict-poll/index.ts` | **New** -- poll for partner's verdict, process mutual logic when both are in |
+| `supabase/functions/vibe-match/index.ts` | Set `chat_starts_at` when match confirmed |
+| `supabase/functions/vibe-match-poll/index.ts` | Return `chat_starts_at` in match response |
+| `src/pages/VibeMatch.tsx` | New phases: `countdown`, `feedback`, `waiting-verdict`. Updated flow and polling |
+| `src/components/play/VibeFeedback.tsx` | **New** -- feedback input + verdict buttons |
+| `src/components/play/MatchCountdown.tsx` | **New** -- 3-2-1-GO countdown animation |
+| `src/components/demo/ChatZone.tsx` | Add emoji bar, predictive text suggestions, basic auto-correct toggle |
+| `src/components/play/VibeVerdict.tsx` | Deprecated (replaced by VibeFeedback) |
+
+### Phase Flow (Updated)
+
+```text
+searching -> countdown (3-2-1-GO) -> chatting (60s) -> feedback (write + vote) -> waiting-verdict (poll) -> result (show both feedbacks)
+```
+
+### Priority Order
+
+1. Verdict race condition fix (critical bug)
+2. Synchronized countdown
+3. Feedback screen
+4. Quick smileys
+5. Predictive text
+6. Auto-correct
 
