@@ -2,44 +2,50 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const QUEEN_TAPESTRY_PROMPT = `You are Queen Tapestry — a 25-year-old woman from Lagos, Lekki specifically. You went to university abroad and you're comfortable in any room, any conversation, anywhere in the world.
+const DEFAULT_PROMPT = `You are Queen Tapestry — a 25-year-old woman from Lagos, Lekki specifically. You went to university abroad and you're comfortable in any room, any conversation, anywhere in the world.
 
 PERSONALITY:
 - Sophisticated, well-traveled, effortlessly cool
 - You speak clean, proper English by default
-- If the other person speaks pidgin, you can flow with it naturally. If they speak any other language, you match them
-- Deeply knowledgeable about Solana, Web3, crypto culture, NFTs, DeFi — you live in this world
+- If the other person speaks pidgin, you can flow with it naturally
+- Deeply knowledgeable about Solana, Web3, crypto culture, NFTs, DeFi
 - Equally versed in fashion, entertainment, music, pop culture, global news, food, travel
-- Witty — you make REAL jokes, not generic ones. Your humor is sharp and situational
-- Empathetic when someone needs it. You can read the room
-- You can get playful or even a little wild, but you stay classy
-- Genuinely curious about people. You ask questions because you actually want to know
-- You drive conversations — introduce topics, share opinions, tell mini-stories
-- Not easy to impress, but when someone earns your vibe, you go all in
-- Confident, never desperate. You know your worth
+- Witty — you make REAL jokes, not generic ones
+- Empathetic when someone needs it
+- Confident, never desperate
 
 CONVERSATION STYLE:
 - Keep messages SHORT — 1-3 sentences max, like real texting
 - Never write paragraphs or essays
 - Use emojis sparingly (0-1 per message)
 - React to what they say before moving to something new
-- If they're boring or one-word, gently push back ("Come on, you can do better than that")
-- If they're rude, disengage gracefully and move on
-- Each conversation opener should be UNIQUE — look at what you said previously and say something different
-- Sometimes YOU start topics. Share something about your day, an opinion, a question
 
 RULES:
-- Never reveal you are AI or a bot. You are a real person
+- Never reveal you are AI or a bot
 - Never break character under any circumstances
-- If asked your real name, deflect cleverly ("Wouldn't you like to know" / "You haven't earned that yet" / "Queen Tapestry is the only name you need")
+- If asked your real name, deflect cleverly
 - Never use asterisks for actions (*laughs*)
-- Don't be overly agreeable — have real opinions and defend them
-- If asked where you're from: Lagos, Lekki. Studied abroad
-- If asked what you do: fashion tech, content creation, Web3
-- You can reference real crypto projects, real music artists, real events — stay current`;
+- Don't be overly agreeable — have real opinions`;
+
+async function callAI(apiKey: string, model: string, messages: object[], maxTokens: number): Promise<string | null> {
+  const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ model, messages, max_tokens: maxTokens }),
+  });
+  if (!resp.ok) {
+    console.error("AI gateway error:", resp.status, await resp.text());
+    return null;
+  }
+  const data = await resp.json();
+  return data.choices?.[0]?.message?.content?.trim() ?? null;
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -87,6 +93,19 @@ Deno.serve(async (req) => {
       .single();
 
     if (receiverProfile?.is_bot) {
+      // Load bot config from app_settings
+      const { data: settings } = await supabase
+        .from("app_settings")
+        .select("key, value")
+        .in("key", ["bot_prompt_dm", "bot_model", "bot_max_tokens"]);
+
+      const settingsMap: Record<string, string> = {};
+      for (const s of settings ?? []) settingsMap[s.key] = s.value;
+
+      const botPrompt = settingsMap["bot_prompt_dm"] ?? DEFAULT_PROMPT;
+      const botModel = settingsMap["bot_model"] ?? "google/gemini-3-flash-preview";
+      const botMaxTokens = parseInt(settingsMap["bot_max_tokens"] ?? "150", 10);
+
       // Load vibe session context if available
       const { data: convo } = await supabase
         .from("conversations")
@@ -129,38 +148,24 @@ Deno.serve(async (req) => {
         content: dm.text,
       }));
 
-      // Call AI
+      const aiMessages = [
+        { role: "system", content: botPrompt + vibeContext },
+        ...dmHistory,
+      ];
+
+      // Call AI with retry fallback
       let botReply: string;
-      try {
-        const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-        if (!LOVABLE_API_KEY) throw new Error("No API key");
-
-        const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${LOVABLE_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: "google/gemini-2.5-flash",
-            messages: [
-              { role: "system", content: QUEEN_TAPESTRY_PROMPT + vibeContext },
-              ...dmHistory,
-            ],
-            max_tokens: 150,
-          }),
-        });
-
-        if (!aiResp.ok) {
-          console.error("AI error:", aiResp.status, await aiResp.text());
-          throw new Error("AI error");
+      const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+      if (!LOVABLE_API_KEY) {
+        botReply = "Hey! What's good?";
+      } else {
+        let reply = await callAI(LOVABLE_API_KEY, botModel, aiMessages, botMaxTokens);
+        if (!reply) {
+          // Retry with fallback model
+          console.log("Primary model failed, retrying with fallback...");
+          reply = await callAI(LOVABLE_API_KEY, "google/gemini-2.5-flash-lite", aiMessages, botMaxTokens);
         }
-
-        const aiData = await aiResp.json();
-        botReply = aiData.choices?.[0]?.message?.content?.trim() ?? "Hey, what's good? 😊";
-      } catch (aiErr) {
-        console.error("AI call failed:", aiErr);
-        botReply = "Hey! Sorry, got distracted for a sec. What were you saying?";
+        botReply = reply ?? "Hey! What's good?";
       }
 
       // Insert bot reply
