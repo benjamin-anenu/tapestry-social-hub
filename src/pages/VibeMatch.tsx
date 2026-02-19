@@ -242,12 +242,14 @@ const VibeMatch = () => {
   }, [sessionId, walletAddress, isBot]);
 
   return (
-    <div className={`flex flex-col items-center bg-background grid-bg overflow-hidden scanlines ${phase === "chatting" ? "h-screen" : "h-[100dvh]"}`}>
-      <div className="pointer-events-none absolute inset-0">
-        <div className="absolute -top-40 left-1/2 h-[600px] w-[600px] -translate-x-1/2 rounded-full bg-primary/5 blur-[150px]" />
-      </div>
+    <div className={`flex flex-col items-center bg-background grid-bg scanlines ${phase === "chatting" ? "fixed inset-0 overflow-hidden" : "h-[100dvh] overflow-hidden"}`}>
+      {phase !== "chatting" && (
+        <div className="pointer-events-none absolute inset-0">
+          <div className="absolute -top-40 left-1/2 h-[600px] w-[600px] -translate-x-1/2 rounded-full bg-primary/5 blur-[150px]" />
+        </div>
+      )}
 
-      <div className={`relative z-10 flex w-full max-w-lg lg:max-w-2xl flex-1 flex-col px-4 py-4 min-h-0 ${phase === "chatting" ? "gap-0" : "items-center justify-center gap-4"}`}>
+      <div className={`relative z-10 flex w-full max-w-lg lg:max-w-2xl flex-1 flex-col min-h-0 ${phase === "chatting" ? "h-full px-0 py-0 gap-0 mx-auto" : "items-center justify-center gap-4 px-4 py-4"}`}>
         <AnimatePresence mode="wait">
           {/* SEARCHING */}
           {phase === "searching" && !error && (
@@ -278,9 +280,9 @@ const VibeMatch = () => {
 
           {/* CHATTING */}
           {phase === "chatting" && (
-            <motion.div key="chat" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex w-full flex-1 flex-col min-h-0">
-              {/* Compact sticky timer bar */}
-              <div className="sticky top-0 z-20 flex items-center gap-3 rounded-lg border border-border/30 bg-card/90 backdrop-blur-sm px-3 py-2 mb-2 shrink-0">
+            <motion.div key="chat" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex w-full flex-1 flex-col min-h-0 h-full">
+              {/* Fixed timer bar at top */}
+              <div className="shrink-0 z-20 flex items-center gap-3 border-b border-border/30 bg-card/90 backdrop-blur-sm px-3 py-2">
                 <p className="font-mono text-[10px] text-muted-foreground truncate">
                   Vibing with <span className="text-primary font-bold">{partnerName}</span>
                 </p>
@@ -288,7 +290,7 @@ const VibeMatch = () => {
                   <GameTimer duration={60} speed={1000} onTick={setTimeLeft} onComplete={handleTimerComplete} />
                 </div>
               </div>
-              <div className="flex-1 min-h-0">
+              <div className="flex-1 min-h-0 overflow-hidden">
                 <ChatZone timeLeft={0} messages={messages} clueDrops={[]} onSendMessage={handleSendMessage} isTyping={isTyping} />
               </div>
             </motion.div>
@@ -378,11 +380,6 @@ const VibeMatch = () => {
           )}
         </AnimatePresence>
 
-        {phase === "chatting" && (
-          <Button variant="ghost" onClick={() => navigate("/play")} className="text-muted-foreground">
-            <ArrowLeft className="mr-2 h-4 w-4" /> Leave
-          </Button>
-        )}
       </div>
     </div>
   );

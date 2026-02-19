@@ -6,7 +6,7 @@ const corsHeaders = {
 };
 
 const BOT_WALLET = "BOT_AMARA_001";
-const WAIT_TIMEOUT_MS = 20_000; // 20 seconds before bot fallback
+const WAIT_TIMEOUT_MS = 5_000; // 5 seconds before bot fallback
 
 const AMARA_GREETINGS = [
   "Hey! 👋 I'm Amara. So tell me, what's your vibe?",

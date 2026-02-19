@@ -51,8 +51,16 @@ Deno.serve(async (req) => {
       .update(updateFields)
       .eq("id", sessionId);
 
-    // Check if both have submitted
-    const otherVerdict = isA ? session.user_b_verdict : session.user_a_verdict;
+    // Re-fetch session to get latest state (prevents race condition)
+    const { data: freshSession } = await supabase
+      .from("vibe_sessions")
+      .select("*")
+      .eq("id", sessionId)
+      .single();
+    if (!freshSession) throw new Error("Session not found after update");
+
+    // Check if both have submitted using fresh data
+    const otherVerdict = isA ? freshSession.user_b_verdict : freshSession.user_a_verdict;
 
     if (otherVerdict === null) {
       // Waiting for partner — client should poll vibe-verdict-poll
@@ -73,16 +81,19 @@ Deno.serve(async (req) => {
     if (mutual) {
       const partnerId = isA ? session.user_b_id : session.user_a_id;
 
-      await supabase.from("friendships").insert([
+      // Use upsert-like approach: insert and ignore duplicates
+      const { error: friendErr } = await supabase.from("friendships").insert([
         { follower_id: profile.id, following_id: partnerId, mutual: true },
         { follower_id: partnerId, following_id: profile.id, mutual: true },
       ]);
+      if (friendErr) console.error("Friendship insert error:", friendErr);
 
       const [pA, pB] = [profile.id, partnerId].sort();
-      await supabase.from("conversations").upsert(
+      const { error: convoErr } = await supabase.from("conversations").upsert(
         { participant_a: pA, participant_b: pB, vibe_session_id: sessionId },
         { onConflict: "participant_a,participant_b" }
       );
+      if (convoErr) console.error("Conversation upsert error:", convoErr);
 
       // Tapestry follow
       const apiKey = Deno.env.get("TAPESTRY_API_KEY");
@@ -116,7 +127,7 @@ Deno.serve(async (req) => {
 
     // Get partner info for result
     const partnerId = isA ? session.user_b_id : session.user_a_id;
-    const otherFeedback = isA ? session.user_b_feedback : session.user_a_feedback;
+    const otherFeedback = isA ? freshSession.user_b_feedback : freshSession.user_a_feedback;
     const { data: partnerProfile } = await supabase
       .from("profiles")
       .select("display_name, username")

@@ -6,8 +6,8 @@ const corsHeaders = {
 };
 
 const BOT_WALLET = "BOT_AMARA_001";
-const FRESHNESS_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
-const SESSION_EXPIRY_MS = 3 * 60 * 1000; // 3 minutes
+const FRESHNESS_WINDOW_MS = 5 * 60 * 1000;
+const SESSION_EXPIRY_MS = 3 * 60 * 1000;
 
 const AMARA_GREETINGS = [
   "Hey! 👋 I'm Amara. So tell me, what's your vibe?",
@@ -85,7 +85,6 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     if (myWaiting) {
-      // I'm already waiting — tell client to poll
       return new Response(JSON.stringify({
         status: "waiting",
         sessionId: myWaiting.id,
@@ -106,7 +105,6 @@ Deno.serve(async (req) => {
         .limit(10);
 
       if (waitingSessions && waitingSessions.length > 0) {
-        // Try to claim the first available waiting session
         for (const ws of waitingSessions) {
           const { data: claimed, error: claimErr } = await supabase
             .from("vibe_sessions")
@@ -118,14 +116,12 @@ Deno.serve(async (req) => {
             .maybeSingle();
 
           if (claimed && !claimErr) {
-            // Set chat_starts_at for synchronized countdown
             const chatStartsAt = new Date(Date.now() + 4000).toISOString();
             await supabase
               .from("vibe_sessions")
               .update({ chat_starts_at: chatStartsAt })
               .eq("id", claimed.id);
 
-            // Get partner info
             const { data: partner } = await supabase
               .from("profiles")
               .select("username, display_name")
@@ -149,7 +145,6 @@ Deno.serve(async (req) => {
       // === STEP 3: Look for online users and try direct match ===
       const freshnessCutoff = new Date(Date.now() - FRESHNESS_WINDOW_MS).toISOString();
 
-      // Get users I'm already in active/waiting sessions with
       const { data: activeSessions } = await supabase
         .from("vibe_sessions")
         .select("user_a_id, user_b_id")
@@ -164,7 +159,6 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Search for online candidates
       let candidates: any[] | null = null;
 
       if (myProfile.country) {
@@ -210,7 +204,6 @@ Deno.serve(async (req) => {
           .single();
         if (sessionErr) throw sessionErr;
 
-        // Get display_name for partner
         const { data: partnerFull } = await supabase
           .from("profiles")
           .select("display_name")
@@ -230,9 +223,9 @@ Deno.serve(async (req) => {
       }
     }
 
-    // === STEP 4: No humans found — create a waiting session (unless human_only blocks bot fallback) ===
+    // === STEP 4: No humans found ===
+
     if (matchingMode === "human_only") {
-      // Create waiting session for human_only mode too
       const { data: session } = await supabase
         .from("vibe_sessions")
         .insert({
@@ -252,7 +245,41 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Auto mode: create waiting session (poll function will handle bot fallback after timeout)
+    // === Auto/bot_only mode: Instant bot match — no waiting! ===
+    const { data: botProfile } = await supabase
+      .from("profiles")
+      .select("id, username, display_name")
+      .eq("wallet_address", BOT_WALLET)
+      .single();
+
+    if (botProfile) {
+      const greeting = AMARA_GREETINGS[Math.floor(Math.random() * AMARA_GREETINGS.length)];
+
+      const { data: session, error: sessionErr } = await supabase
+        .from("vibe_sessions")
+        .insert({
+          user_a_id: myProfile.id,
+          user_b_id: botProfile.id,
+          status: "active",
+          chat_log: [{ sender: BOT_WALLET, text: greeting, time: Date.now() }],
+        })
+        .select("id")
+        .single();
+      if (sessionErr) throw sessionErr;
+
+      return new Response(JSON.stringify({
+        status: "matched",
+        sessionId: session.id,
+        role: "a",
+        partnerName: botProfile.username === "queen_tapestry" ? "Queen Tapestry" : botProfile.display_name ?? "Amara",
+        isBot: true,
+        initialMessages: [{ sender: "them", text: greeting, time: Date.now() }],
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Fallback: no bot profile found, create waiting session
     const { data: session } = await supabase
       .from("vibe_sessions")
       .insert({
