@@ -1,138 +1,130 @@
 
-## Fix Queen Tapestry AI Replies + Admin Bot Configuration + Display Name Resolution
+## Three Issues, Three Root Causes, Three Clean Fixes
 
-### Advisory Council Assessment
+### Advisory Council Diagnosis
 
-**The core problem, reframed:**
-Three distinct failure modes are occurring simultaneously:
-
-1. **AI Gateway 500 errors** — The `google/gemini-2.5-flash` model is returning HTTP 500 on every call to the Lovable AI Gateway, triggering the hardcoded catch fallback. This is the sole reason Queen Tapestry says *"Hey! Sorry, got distracted for a sec."* — it's not a prompt issue, it's a model availability/call issue.
-
-2. **Display names showing Tapestry short codes** — Users like "QyLSSxn7" have their 8-character Tapestry username as their `display_name` (correctly backfilled). This IS the correct name from the Tapestry namespace — it's just cryptic. The UI code is working correctly; the underlying data is just opaque handles. This needs a better labeling strategy, not a code fix.
-
-3. **No admin control over Queen Tapestry's persona** — The prompt is hardcoded in two separate edge functions with no runtime configurability, violating the principle of operational separation between code and configuration.
+**This is not one problem — it is three independent failures that happen to be visible at the same time. Treating them as one will create confusion. Each must be diagnosed and fixed at its correct layer.**
 
 ---
 
-### Issue 1: Fix the AI Gateway Call
+### Issue 1: What is "Tapestry ID" vs Display Name?
 
-**Root cause confirmed from logs:**
+**Conceptual clarification (for product decisions):**
+
+Tapestry is an external social graph protocol. When a user creates a profile, they pick a `username` (like "Jack_ma"). The Tapestry API stores this.
+
+Locally, the `profiles` table has three name fields:
+- `username` — the short handle from Tapestry (e.g. "QyLSSxn7" or "Jack_ma")
+- `display_name` — what shows in the app UI (should equal the Tapestry username)
+- `tapestry_id` — currently null for most users (was meant to store the ID but never properly written)
+
+For wallet `QyLSSxn7pbLo8cTbpZmNimmCk8Qf1M4EEUptwb16eun`:
+- Their **Tapestry username is "Jack_ma"** — confirmed in edge function logs
+- But their local DB still has `display_name: "QyLSSxn7"` (the old auto-generated handle from before they changed their Tapestry name)
+- The DB was **never updated** after they changed their Tapestry username because the lookup mode doesn't write back to the DB
+
+**The Tapestry ID should be the username they chose — it is NOT their wallet address. The wallet address is just used to find them on Tapestry.**
+
+---
+
+### Issue 2: Why Does "Jack_ma" Not Show? (Root Cause)
+
+In `supabase/functions/tapestry-identity/index.ts`, the **LOOKUP MODE** (lines 196–231) correctly calls Tapestry and gets back `username: "Jack_ma"` — but it **only builds a response object and never writes back to the database**.
+
+The DB write only happens in **CREATE MODE** (lines 170–193).
+
+So:
+- User created their profile with handle "QyLSSxn7" → DB written correctly
+- User later changed their Tapestry username to "Jack_ma" (on Tapestry or during a re-login)
+- Every subsequent lookup fetches "Jack_ma" from Tapestry but discards it without updating the DB
+- The UI reads `display_name` from the DB → still sees "QyLSSxn7"
+
+**Fix: In LOOKUP MODE, after getting a fresh Tapestry username, upsert `display_name` and `username` in the local DB if they differ from what Tapestry returns.**
+
+This is a one-line addition to the lookup path — and it means any time a user logs in, their display name automatically syncs to whatever is current in Tapestry.
+
+---
+
+### Issue 3: Queen Tapestry Not Responding (Root Cause)
+
+From the logs, the pattern is clear:
+
 ```
-AI error: 500 {"type":"internal_server_error","message":"","details":""}
-```
-This is happening on every single call. The model `google/gemini-2.5-flash` is consistently failing. Switch to `google/gemini-3-flash-preview` (the recommended default) in both `direct-chat` and `vibe-bot-chat`. Also add a retry with a fallback model (`google/gemini-2.5-flash-lite`) before giving up with a hardcoded string.
-
-**Files affected:**
-- `supabase/functions/direct-chat/index.ts` — switch model, add retry
-- `supabase/functions/vibe-bot-chat/index.ts` — switch model, add retry
-
----
-
-### Issue 2: Display Name Clarity
-
-**The data is correct.** The DB shows `display_name = "QyLSSxn7"` — this is their chosen Tapestry username, not a wallet address (the wallet is `QyLSSxn7pbLo8cTbpZmNimmCk8Qf1M4EEUptwb16eun`). The `Friends.tsx` code correctly uses `displayName ?? username`.
-
-**The real problem:** Users never see an opportunity to set a human-readable display name. The Tapestry short handle is being used as-is.
-
-**Fix:** In `Friends.tsx`, if the `displayName` matches the wallet address prefix pattern (short alphanumeric), show it but add a subtle visual indicator. More importantly, ensure the `tapestry-identity` edge function writes proper display names when Tapestry returns a real username vs a wallet-derived one. No UI logic change needed here — the data layer is the right layer to fix this.
-
-The display name "QyLSSxn7" IS their Tapestry identity — this is correct behavior. The issue is cosmetic and the real fix is encouraging users to set a display name via profile edit.
-
----
-
-### Issue 3: Admin — Queen Tapestry Configuration Panel
-
-**Architecture decision:** Store Queen Tapestry's persona config in `app_settings` table (already exists). Add new keys:
-- `bot_prompt_vibe` — persona prompt for vibe sessions
-- `bot_prompt_dm` — persona prompt for DM circle chat
-- `bot_model` — AI model to use (dropdown)
-- `bot_max_tokens` — max response length
-- `bot_max_nudges` — how many times she nudges before going quiet
-
-The edge functions will read these settings at runtime from `app_settings` instead of using hardcoded constants. The admin panel gets a new "Queen Tapestry" configuration card.
-
-**Data flow:**
-```text
-Admin Panel → admin-api (set_bot_config action) → app_settings table
-                                                        ↓
-                    direct-chat / vibe-bot-chat read at request time
+AI gateway error: 500 - primary model (google/gemini-2.5-pro)
+AI gateway error: 500 - fallback model (google/gemini-2.5-flash-lite)
+→ hardcoded fallback string fires: "Hey! What's good?"
 ```
 
-**Why not hardcode in edge functions?** Because every persona tweak currently requires a code deployment. Storing in `app_settings` means real-time adjustments without code changes — a critical operational requirement for a live product.
+Wait — the network response shows "Hey! Sorry, got distracted for a sec." still appearing in the conversation history. That is an OLD message already stored in the `direct_messages` table from before the code fix. It is NOT being generated now. The function currently IS falling back to "Hey! What's good?" when both models fail.
+
+**The actual problem: `google/gemini-2.5-pro` is consistently returning HTTP 500 from the AI Gateway.** The admin changed the model to `google/gemini-2.5-pro` via the admin panel, and that model appears to be unavailable or overloaded right now.
+
+**The fix has two parts:**
+
+**Part A — Model selection:** Switch the primary to `google/gemini-3-flash-preview` which was working (the `vibe-bot-verdict` succeeded recently), and keep `openai/gpt-5-nano` as a second fallback (different provider entirely, so if Google's gateway is down, OpenAI still works). Also add a third fallback to `google/gemini-2.5-flash-lite`.
+
+**Part B — Defensive coding:** The `direct-chat` function currently returns `{"ok": true}` even when the AI fails and uses the fallback string. The function should still save the message but log clearly that AI failed. More importantly, the fallback string should NOT be "Hey! Sorry, got distracted" (that's the old code) or "Hey! What's good?" — it should be a message that feels natural and continues the conversation, like "Give me a sec... what did you say again?" — but the real fix is making the AI actually work.
+
+**Part C — The `is_mutual_friend` check is blocking:** The `direct-chat` function checks `is_mutual_friend` before processing. For Queen Tapestry (a bot), this friendship is stored differently. Looking at the conversation table — conversations exist and messages ARE being inserted and Queen Tapestry IS replying. So the mutual friend check is passing. The issue is purely the AI gateway returning 500.
 
 ---
 
-### Technical Implementation Plan
+### Implementation Plan
 
-#### Step 1: Populate app_settings with bot config defaults
-Insert new rows into `app_settings`:
-- `bot_prompt_vibe` → current vibe prompt text
-- `bot_prompt_dm` → current DM prompt text  
-- `bot_model` → `google/gemini-3-flash-preview`
-- `bot_max_tokens` → `150`
-- `bot_max_nudges` → `3`
+#### Fix 1: `tapestry-identity/index.ts` — Sync display_name on lookup
+In the LOOKUP MODE section (after line 219 where `profile` is built), add a DB write using the service role key to update `display_name` and `username` if the Tapestry username is different from what's currently stored.
 
-#### Step 2: Update `supabase/functions/direct-chat/index.ts`
-- Remove hardcoded `QUEEN_TAPESTRY_PROMPT` constant
-- At request time, fetch `bot_prompt_dm`, `bot_model`, `bot_max_tokens` from `app_settings`
-- Switch to `google/gemini-3-flash-preview` as the model
-- Add retry: if first model call fails, retry with `google/gemini-2.5-flash-lite`
-- Fix CORS headers to include all required headers (currently missing some)
+```
+if (uname) {
+  // Sync display_name to current Tapestry username
+  const supabase = createClient(supabaseUrl, serviceKey);
+  await supabase.from("profiles")
+    .update({ display_name: uname, username: uname, tapestry_id: uname })
+    .eq("wallet_address", walletAddress)
+    .not("display_name", "eq", uname); // only update if different (avoid unnecessary writes)
+}
+```
 
-#### Step 3: Update `supabase/functions/vibe-bot-chat/index.ts`
-- Remove hardcoded `QUEEN_TAPESTRY_PROMPT` and `MAX_UNANSWERED_NUDGES` constants
-- Fetch `bot_prompt_vibe`, `bot_model`, `bot_max_tokens`, `bot_max_nudges` from `app_settings`
-- Switch model + add retry logic
+This means every time any user logs in, their display name self-heals to match Tapestry.
 
-#### Step 4: Update `supabase/functions/admin-api/index.ts`
-Add a new `set_bot_config` action that accepts a `configs` object (key-value pairs) and batch-updates `app_settings`. Also add `get_bot_config` to the `dashboard` response.
+#### Fix 2: `direct-chat/index.ts` — Multi-model fallback chain
+Replace the two-model fallback with a three-model chain:
+1. Primary: read from `app_settings` (currently `google/gemini-2.5-pro`)
+2. Fallback 1: `google/gemini-3-flash-preview`
+3. Fallback 2: `openai/gpt-5-nano`
 
-#### Step 5: Update `src/pages/Admin.tsx`
-Add a new **"Queen Tapestry AI"** configuration card below the Matching Mode card with:
-- **Model selector** — dropdown: `google/gemini-3-flash-preview`, `google/gemini-2.5-flash`, `google/gemini-2.5-flash-lite`
-- **Max tokens** — number input (50–500)
-- **Max nudges (Vibe)** — number input (1–10)
-- **Vibe Persona Prompt** — large textarea (the prompt for vibe sessions)
-- **DM Persona Prompt** — large textarea (the prompt for circle DMs)
-- **Save** button that calls `admin-api` with `set_bot_config`
+Also update the `app_settings` default for `bot_model` back to `google/gemini-3-flash-preview` since `google/gemini-2.5-pro` is consistently returning 500. The admin can change this at any time via the admin panel.
 
-The admin sees exactly what Queen Tapestry will say and how she'll behave. Real-time updates, no deployments needed.
+#### Fix 3: Update `app_settings` bot_model back to working model
+The admin changed `bot_model` to `google/gemini-2.5-pro` via the admin panel — that model appears to be consistently returning 500. Reset it to `google/gemini-3-flash-preview` via a database update. No migration needed — just a direct `UPDATE app_settings SET value = 'google/gemini-3-flash-preview' WHERE key = 'bot_model'`.
 
-#### Step 6: Display name in Friends.tsx
-The existing code `displayName ?? username ?? "Unknown"` is correct. The "QyLSSxn7" is valid data. However, to make it clearer and encourage profile completion, add a subtle tooltip/tag showing "Tapestry ID" for names that look like auto-generated handles (purely alphabetic 8-char strings). This is cosmetic only.
+#### Fix 4: `vibe-bot-chat/index.ts` — Same three-model fallback chain
+Apply the same multi-provider fallback to the vibe chat bot.
 
 ---
 
-### Files to Change
+### Files Changed
 
 | File | Change |
 |------|--------|
-| `supabase/functions/direct-chat/index.ts` | Read prompt from DB, fix model, add retry |
-| `supabase/functions/vibe-bot-chat/index.ts` | Read prompt/config from DB, fix model, add retry |
-| `supabase/functions/admin-api/index.ts` | Add `get_bot_config` + `set_bot_config` actions |
-| `src/pages/Admin.tsx` | Add Queen Tapestry configuration card |
+| `supabase/functions/tapestry-identity/index.ts` | Add DB write in LOOKUP MODE to sync display_name/username from Tapestry |
+| `supabase/functions/direct-chat/index.ts` | Add three-model fallback chain (gemini-3-flash-preview → gpt-5-nano → gemini-2.5-flash-lite) |
+| `supabase/functions/vibe-bot-chat/index.ts` | Same three-model fallback chain |
 
-### Database Changes
-Insert 5 new rows into `app_settings`:
-```sql
-INSERT INTO app_settings (key, value) VALUES
-  ('bot_model', 'google/gemini-3-flash-preview'),
-  ('bot_max_tokens', '150'),
-  ('bot_max_nudges', '3'),
-  ('bot_prompt_vibe', '...vibe prompt...'),
-  ('bot_prompt_dm', '...dm prompt...')
-ON CONFLICT (key) DO NOTHING;
-```
+### Database Change (no migration needed — just a settings update)
+Reset `bot_model` in `app_settings` back to `google/gemini-3-flash-preview` via direct SQL update.
 
-### Advisory Challenges to My Own Plan
+### What Is NOT Changing
+- No UI changes — `Friends.tsx` display name logic is already correct (`displayName ?? username`)
+- No schema changes
+- No RLS policy changes
+- Admin panel Queen Tapestry card stays as-is — it works correctly and correctly saved the `gemini-2.5-pro` setting
 
-**Challenge 1:** Storing prompts in DB adds latency (one extra read per message). **Mitigation:** The `app_settings` table is tiny and the read costs <5ms — acceptable tradeoff for operational flexibility.
+### Advisory Challenge to My Own Plan
+**Challenge:** Why is `google/gemini-3-flash-preview` reliable but `google/gemini-2.5-pro` not? They're both on the same gateway.
 
-**Challenge 2:** Prompts in a DB can be accidentally wiped. **Mitigation:** The edge functions should fall back to a hardcoded safe default if the DB setting is missing.
+**Answer:** Preview models are often on separate infrastructure with higher availability. The `gemini-2.5-pro` may have rate limits or be in higher demand. Adding a cross-provider fallback (OpenAI `gpt-5-nano`) ensures that if Google's models are down entirely, the bot still responds via OpenAI's infrastructure. This is the correct production-grade approach.
 
-**Challenge 3:** The display name issue ("QyLSSxn7") is not a bug — it's a UX/product gap. Users need a way to set human names. **Deferred:** Profile editing already exists in `EditProfileSheet.tsx` — ensure `display_name` can be set there. Out of scope for this fix.
+**Challenge:** Will adding a DB write in lookup mode cause performance issues?
 
-### What NOT to Do
-- Do not rename or change the fallback reply string — fix the model call so it never hits the fallback
-- Do not add more hardcoded prompts — move everything to `app_settings`
-- Do not change the display name logic in `Friends.tsx` — the code is correct, the data is the issue
+**Answer:** The write only fires when the Tapestry username DIFFERS from what's in the DB (`.not("display_name", "eq", uname)`). After the first sync, subsequent logins skip the write entirely. Cost is ~5ms per new sync, zero on subsequent calls.
