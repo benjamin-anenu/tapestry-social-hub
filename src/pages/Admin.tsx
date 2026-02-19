@@ -16,7 +16,7 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Users, Activity, Zap, Settings, ArrowLeft, ShieldAlert, Loader2, Bot, Save } from "lucide-react";
+import { Users, Activity, Zap, Settings, ArrowLeft, ShieldAlert, Loader2, Bot, Save, FlaskConical, CheckCircle2, XCircle, Clock } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import AdminUserSearch from "@/components/admin/AdminUserSearch";
 import AdminBulkActions from "@/components/admin/AdminBulkActions";
@@ -60,6 +60,36 @@ const Admin = () => {
     bot_prompt_dm: "",
   });
   const [savingBot, setSavingBot] = useState(false);
+
+  // AI Test state
+  const [testingAI, setTestingAI] = useState(false);
+  const [testResult, setTestResult] = useState<{
+    success: boolean;
+    responseTimeMs: number;
+    model: string;
+    message?: string;
+  } | null>(null);
+
+  const handleTestAI = async () => {
+    if (!walletAddress) return;
+    setTestingAI(true);
+    setTestResult(null);
+    const startTime = performance.now();
+    try {
+      const { data: resp, error } = await supabase.functions.invoke("test-ai", {
+        body: { model: botConfig.bot_model, walletAddress },
+      });
+      const elapsed = Math.round(performance.now() - startTime);
+      if (error || resp?.error) {
+        setTestResult({ success: false, responseTimeMs: elapsed, model: botConfig.bot_model, message: resp?.error ?? error?.message });
+      } else {
+        setTestResult({ success: true, responseTimeMs: elapsed, model: botConfig.bot_model, message: resp?.reply });
+      }
+    } catch (e: any) {
+      setTestResult({ success: false, responseTimeMs: Math.round(performance.now() - startTime), model: botConfig.bot_model, message: e.message });
+    }
+    setTestingAI(false);
+  };
 
   const walletAddress = publicKey?.toBase58() ?? null;
 
@@ -340,18 +370,21 @@ const Admin = () => {
                 <Label className="font-mono text-xs text-muted-foreground">AI Model</Label>
                 <Select
                   value={botConfig.bot_model}
-                  onValueChange={(v) => setBotConfig((prev) => ({ ...prev, bot_model: v }))}
+                  onValueChange={(v) => { setBotConfig((prev) => ({ ...prev, bot_model: v })); setTestResult(null); }}
                 >
                   <SelectTrigger className="font-mono text-sm">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="google/gemini-3-flash-preview">gemini-3-flash-preview (recommended)</SelectItem>
-                    <SelectItem value="google/gemini-2.5-flash">gemini-2.5-flash</SelectItem>
-                    <SelectItem value="google/gemini-2.5-flash-lite">gemini-2.5-flash-lite (fastest)</SelectItem>
-                    <SelectItem value="google/gemini-2.5-pro">gemini-2.5-pro (best quality)</SelectItem>
+                    <SelectItem value="google/gemini-3-flash-preview">✓ gemini-3-flash-preview (recommended)</SelectItem>
+                    <SelectItem value="google/gemini-3-pro-preview">✓ gemini-3-pro-preview (smart)</SelectItem>
+                    <SelectItem value="google/gemini-2.5-flash">✓ gemini-2.5-flash (balanced)</SelectItem>
+                    <SelectItem value="google/gemini-2.5-flash-lite">✓ gemini-2.5-flash-lite (fastest)</SelectItem>
+                    <SelectItem value="openai/gpt-5-nano">✓ gpt-5-nano (OpenAI, fast)</SelectItem>
+                    <SelectItem value="openai/gpt-5-mini">✓ gpt-5-mini (OpenAI, balanced)</SelectItem>
                   </SelectContent>
                 </Select>
+                <p className="text-[10px] text-muted-foreground font-mono">Only gateway-verified models shown</p>
               </div>
               <div className="space-y-2">
                 <Label className="font-mono text-xs text-muted-foreground">Max Tokens (reply length)</Label>
@@ -407,17 +440,64 @@ const Admin = () => {
               />
             </div>
 
-            <Button
-              onClick={handleSaveBotConfig}
-              disabled={savingBot}
-              className="gap-2 w-full md:w-auto"
-            >
-              {savingBot ? (
-                <><Loader2 className="h-4 w-4 animate-spin" /> Saving...</>
-              ) : (
-                <><Save className="h-4 w-4" /> Save Queen Tapestry Config</>
+            {/* Test AI + Save row */}
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-wrap gap-3 items-center">
+                <Button
+                  variant="outline"
+                  onClick={handleTestAI}
+                  disabled={testingAI}
+                  className="gap-2"
+                >
+                  {testingAI ? (
+                    <><Loader2 className="h-4 w-4 animate-spin" /> Testing...</>
+                  ) : (
+                    <><FlaskConical className="h-4 w-4" /> Test AI Model</>
+                  )}
+                </Button>
+
+                <Button
+                  onClick={handleSaveBotConfig}
+                  disabled={savingBot}
+                  className="gap-2"
+                >
+                  {savingBot ? (
+                    <><Loader2 className="h-4 w-4 animate-spin" /> Saving...</>
+                  ) : (
+                    <><Save className="h-4 w-4" /> Save Queen Tapestry Config</>
+                  )}
+                </Button>
+              </div>
+
+              {/* Test Result */}
+              {testResult && (
+                <div className={`flex items-start gap-3 p-3 rounded-lg border font-mono text-xs ${
+                  testResult.success
+                    ? "border-primary/30 bg-primary/10"
+                    : "border-destructive/30 bg-destructive/10"
+                }`}>
+                  {testResult.success ? (
+                    <CheckCircle2 className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                  ) : (
+                    <XCircle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-3 mb-1">
+                      <span className={testResult.success ? "text-primary" : "text-destructive"}>
+                        {testResult.success ? "Model responding ✓" : "Model failed ✗"}
+                      </span>
+                      <span className="flex items-center gap-1 text-muted-foreground">
+                        <Clock className="h-3 w-3" />{testResult.responseTimeMs}ms
+                      </span>
+                      <span className="text-muted-foreground">{testResult.model.split("/")[1]}</span>
+                    </div>
+                    {testResult.message && (
+                      <p className="text-muted-foreground truncate">{testResult.message}</p>
+                    )}
+                  </div>
+                </div>
               )}
-            </Button>
+            </div>
           </CardContent>
         </Card>
 
