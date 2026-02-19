@@ -157,15 +157,18 @@ Deno.serve(async (req) => {
       let botReply: string;
       const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
       if (!LOVABLE_API_KEY) {
-        botReply = "Hey! What's good?";
+        botReply = "Give me a sec... what did you say again?";
       } else {
         let reply = await callAI(LOVABLE_API_KEY, botModel, aiMessages, botMaxTokens);
         if (!reply) {
-          // Retry with fallback model
-          console.log("Primary model failed, retrying with fallback...");
+          console.log("Primary model failed, retrying with openai/gpt-5-nano...");
+          reply = await callAI(LOVABLE_API_KEY, "openai/gpt-5-nano", aiMessages, botMaxTokens);
+        }
+        if (!reply) {
+          console.log("Second model failed, retrying with google/gemini-2.5-flash-lite...");
           reply = await callAI(LOVABLE_API_KEY, "google/gemini-2.5-flash-lite", aiMessages, botMaxTokens);
         }
-        botReply = reply ?? "Hey! What's good?";
+        botReply = reply ?? "Give me a sec... what did you say again?";
       }
 
       // Insert bot reply

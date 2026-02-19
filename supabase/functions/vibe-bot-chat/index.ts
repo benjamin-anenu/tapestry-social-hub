@@ -150,7 +150,7 @@ Deno.serve(async (req) => {
       })),
     ];
 
-    // Call AI with retry fallback
+    // Call AI with retry fallback chain
     let amaraResponse: string;
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) {
@@ -158,7 +158,11 @@ Deno.serve(async (req) => {
     } else {
       let reply = await callAI(LOVABLE_API_KEY, botModel, aiMessages, botMaxTokens);
       if (!reply) {
-        console.log("Primary model failed, retrying with fallback...");
+        console.log("Primary model failed, retrying with openai/gpt-5-nano...");
+        reply = await callAI(LOVABLE_API_KEY, "openai/gpt-5-nano", aiMessages, botMaxTokens);
+      }
+      if (!reply) {
+        console.log("Second model failed, retrying with google/gemini-2.5-flash-lite...");
         reply = await callAI(LOVABLE_API_KEY, "google/gemini-2.5-flash-lite", aiMessages, botMaxTokens);
       }
       amaraResponse = reply ?? DEFAULT_FALLBACK_RESPONSES[Math.floor(Math.random() * DEFAULT_FALLBACK_RESPONSES.length)];
