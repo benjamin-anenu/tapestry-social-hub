@@ -178,6 +178,7 @@ serve(async (req) => {
           tapestry_id: username,
           username: username,
         };
+        // Fallback: ensure display_name is always set
         if (realName) updateFields.real_name = realName;
         if (country) updateFields.country = country;
         if (xHandle) updateFields.x_handle = xHandle;

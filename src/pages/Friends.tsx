@@ -135,7 +135,7 @@ const Friends = () => {
 
   const filtered = search
     ? conversations.filter(c =>
-        (c.username ?? c.displayName ?? "").toLowerCase().includes(search.toLowerCase())
+        (c.displayName ?? c.username ?? "").toLowerCase().includes(search.toLowerCase())
       )
     : conversations;
 

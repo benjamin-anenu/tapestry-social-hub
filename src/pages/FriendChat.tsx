@@ -310,7 +310,7 @@ const FriendChat = () => {
       </div>
 
       {/* Input */}
-      <div className="border-t border-border/50 bg-card/50 p-3 backdrop-blur-sm">
+      <div className="border-t border-border/50 bg-card/50 px-3 pt-3 backdrop-blur-sm" style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}>
         <div className="flex gap-2">
           <Input
             value={inputValue}
