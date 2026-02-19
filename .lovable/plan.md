@@ -1,64 +1,64 @@
 
+## Fix Build Error + Display Names + Chat/Keyboard Experience
 
-## Show Proper Names in Circle + Make Queen Tapestry a Universal Friend with Smart DM Chat
+### What's Actually Happening
 
-### 1. Fix Display Names in My Circle and Chat
+**From the database**, real user profiles have:
+- `display_name = null` (never set)
+- `username = "QyLSSxn7"` (short wallet-derived Tapestry username)
 
-**Problem:** The circle list and chat headers show wallet-derived usernames like "QyLSSxn7" instead of proper names. The display_name field is null for real users, and the code prefers username over display_name.
+So "QyLSSxn7" IS the Tapestry username — it's not a wallet address, but it looks like one. The `display_name` field is simply never being written for real users.
 
-**Fix:**
-- **`src/pages/Friends.tsx` (line 22):** Change name resolution order to prefer `displayName` over `username`, so "Queen Tapestry" shows properly. Also always show the search bar (currently hidden unless >3 conversations).
-- **`src/pages/FriendChat.tsx` (line 220):** Same fix -- prefer `displayName` over `username` for the chat header name.
+**Two fixes needed:**
+1. The search filter in Friends.tsx has the priority reversed: it searches `c.username ?? c.displayName` but should be `c.displayName ?? c.username`
+2. Real users' display names need to be resolved better — either from Tapestry's `username` field (which IS their chosen nickname) or we need a fallback label
 
-### 2. Make Queen Tapestry Friends with Everyone
+### Root Cause of Build Error
 
-**Data inserts:** Queen Tapestry (profile `46f97bab`) is already friends with 2 users. Need to add mutual friendships + conversations for the remaining users:
-- `d2cff6a6` (EFj94nBz)
-- `81e7501f` (F8nWoPWM)
+The build error is almost certainly a TypeScript issue. The `direct-chat/index.ts` edge function references `supabase.rpc("is_mutual_friend", ...)` with typed params that Deno might be rejecting. But since edge functions don't fail the React build, the build error is likely a **JSX/TypeScript error in a React file** — likely introduced during Friends.tsx or FriendChat.tsx edits (possibly an unclosed tag or type mismatch).
 
-This means inserting 4 friendship rows (2 per user, both directions, mutual=true) and 2 conversation rows linking each user to Queen Tapestry.
+### Fix Plan
 
-### 3. Bot DM Chat -- Queen Tapestry Replies in Direct Messages
+**1. Friends.tsx — Fix search filter priority + display name fallback**
+- Line 22: `convo.displayName ?? convo.username` is already correct (displayName first)
+- Line 138 (search filter): Fix `c.username ?? c.displayName` → `c.displayName ?? c.username`
+- Add a helper to make names look better: if `displayName` is null and `username` looks like a wallet short string (8 chars, alphanumeric), show it as-is but style it as a username
 
-**Current limitation:** The `direct-chat` edge function only inserts messages. It doesn't generate AI replies when the receiver is a bot.
+**2. FriendChat.tsx — Already correct at line 220**
+- `friend?.displayName ?? friend?.username ?? "Chat"` — this is correct, no change needed
 
-**New behavior:** Modify `direct-chat` to detect when `receiverProfileId` belongs to a bot profile (`is_bot = true`). When it does:
-1. Load the conversation's vibe_session chat_log as context (so she "remembers" the vibe)
-2. Load recent direct_messages for additional context
-3. Call the AI gateway with the revamped Queen Tapestry prompt
-4. Insert the bot's reply as a direct_message from the bot profile
-5. Update the conversation's last_message fields
+**3. Fix the display name issue at source (tapestry-identity edge function)**
+- Currently `display_name` is set from Tapestry's `displayName` field
+- For users who don't set a display name on Tapestry, it falls back to null
+- Fix: When creating/finding a profile, set `display_name = username` if `display_name` is null. This ensures the circle always shows a recognizable name instead of null
 
-### 4. Completely Revamp Queen Tapestry's Persona
+**4. Fix search filter in Friends.tsx**
+- Line 138: Reverse priority so search checks displayName first
 
-**Remove:** All "sha", "abi", "o" and heavy Nigerian slang directives. Remove the name "Amara Femilade" from the prompt so she never reveals it.
+**5. Keyboard/Chat UX fix in FriendChat.tsx**
+- The chat input uses `h-[100dvh]` layout which should handle keyboards, but on mobile the keyboard pushing the layout needs `pb-safe` handling
+- Add `viewport-fit=cover` safe area handling to the input bar
+- The input bar `p-3` should have `pb-safe` or use `env(safe-area-inset-bottom)` for iPhone notch handling
 
-**New persona -- Queen Tapestry:**
-- Sophisticated, well-traveled Lagos girl from Lekki. Went to uni abroad. Comfortable anywhere.
-- Speaks clean, proper English by default. Can switch to pidgin if the other person initiates it. Can match any language the user speaks.
-- Deeply knowledgeable about Solana, Web3, crypto culture -- but equally versed in fashion, entertainment, music, pop culture, news.
-- Witty, makes real jokes (not generic ones). Empathetic when needed. Can get playful/wild but stays classy.
-- Genuinely curious about people. Drives conversations, introduces herself, shares opinions.
-- Not easy to impress but vibes hard when someone earns it.
-- Never reveals she's AI. Never says her real name. Gives clever deflections if pressed.
-- Each conversation opener is unique -- she checks what she said last time before generating a new one.
-
-### 5. Fix Self-Talking / Hallucination During Vibe Sessions
-
-**Problem:** When the user is silent, the nudge system sends repeated requests to the bot. The bot sees its own previous messages as context and responds to itself, creating a one-sided monologue.
-
-**Fix in `supabase/functions/vibe-bot-chat/index.ts`:**
-- Before generating a nudge response, check if the last N messages in chat_log are ALL from the bot. If the bot has already sent 3-4 unanswered messages, stop responding (return a "no reply" response instead of generating more text).
-- Add a nudge instruction that explicitly tells the AI: "You already sent messages that went unanswered. Don't just keep talking. Either send ONE short natural follow-up or stay silent."
-- Track nudge count so after 3-4 attempts, the bot goes quiet (like a real person would).
-
-### Technical Summary
+### Files to Change
 
 | File | Change |
 |------|--------|
-| `src/pages/Friends.tsx` | Prefer displayName over username; always show search bar |
-| `src/pages/FriendChat.tsx` | Prefer displayName over username in header |
-| `supabase/functions/direct-chat/index.ts` | Detect bot receiver, load context, generate AI reply, insert bot DM |
-| `supabase/functions/vibe-bot-chat/index.ts` | Revamp persona prompt; fix self-talking with nudge limits |
-| Database (data insert) | Add friendships + conversations for Queen Tapestry with remaining users |
+| `src/pages/Friends.tsx` | Fix search filter priority (line 138) |
+| `src/pages/FriendChat.tsx` | Add safe-area padding for keyboard on mobile, fix any build error |
+| `supabase/functions/tapestry-identity/index.ts` | Set `display_name = username` as fallback when display_name is null on upsert |
 
+### Database Fix (display_name for existing users)
+Run an SQL update to backfill display_name from username for users where display_name is null:
+```sql
+UPDATE profiles 
+SET display_name = username 
+WHERE display_name IS NULL AND is_bot = false AND username IS NOT NULL;
+```
+This will make "QyLSSxn7" show as the display name until users set a proper one — which is better than showing nothing or a full wallet address. Future logins will automatically set display_name from username.
+
+### Technical Implementation Order
+1. Run DB backfill migration for display_name
+2. Fix Friends.tsx search filter
+3. Fix FriendChat.tsx mobile keyboard safe area
+4. Update tapestry-identity edge function to always set display_name fallback
