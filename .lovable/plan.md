@@ -1,130 +1,106 @@
 
-## Three Issues, Three Root Causes, Three Clean Fixes
+## Three Bugs, Three Clean Fixes
 
-### Advisory Council Diagnosis
+### Bug 1: DM Hallucination (Queen Tapestry Repeating Herself)
 
-**This is not one problem — it is three independent failures that happen to be visible at the same time. Treating them as one will create confusion. Each must be diagnosed and fixed at its correct layer.**
+**Root cause — confirmed from DB:**
+The `direct-chat` function loads the last 30 messages and sends all of them as AI context. When a conversation stays on one topic for many turns (e.g., the gorilla animation thread), the AI sees 30 messages about the same subject with no instruction to avoid repeating phrases it already used. It then produces near-identical responses because the context window is "stuck in a groove."
 
----
+There are two compounding factors:
+1. `bot_max_tokens` is currently set to **300** — this is too high. Higher tokens = longer, more wandering replies that are more likely to echo previous content.
+2. There is no explicit instruction in the prompt telling the bot to **scan its own recent replies and avoid repeating phrases**.
 
-### Issue 1: What is "Tapestry ID" vs Display Name?
-
-**Conceptual clarification (for product decisions):**
-
-Tapestry is an external social graph protocol. When a user creates a profile, they pick a `username` (like "Jack_ma"). The Tapestry API stores this.
-
-Locally, the `profiles` table has three name fields:
-- `username` — the short handle from Tapestry (e.g. "QyLSSxn7" or "Jack_ma")
-- `display_name` — what shows in the app UI (should equal the Tapestry username)
-- `tapestry_id` — currently null for most users (was meant to store the ID but never properly written)
-
-For wallet `QyLSSxn7pbLo8cTbpZmNimmCk8Qf1M4EEUptwb16eun`:
-- Their **Tapestry username is "Jack_ma"** — confirmed in edge function logs
-- But their local DB still has `display_name: "QyLSSxn7"` (the old auto-generated handle from before they changed their Tapestry name)
-- The DB was **never updated** after they changed their Tapestry username because the lookup mode doesn't write back to the DB
-
-**The Tapestry ID should be the username they chose — it is NOT their wallet address. The wallet address is just used to find them on Tapestry.**
+**Fixes:**
+- In `direct-chat/index.ts`: Before building `aiMessages`, extract the bot's last 5 replies and inject them into the system prompt as a "DO NOT REPEAT" block. This gives the model explicit memory of what it just said.
+- Reduce `bot_max_tokens` from 300 to 120 in `app_settings`. Shorter = punchier = more natural texting = less repetition risk.
+- Also trim context: instead of sending all 30 messages, send the most recent 20. The older messages add noise when the topic has already drifted.
+- Add an explicit rule to `bot_prompt_dm` in `app_settings`: "CRITICAL: Scan your previous messages in this conversation. Do NOT repeat any phrase, sentence, or idea you already expressed. If you catch yourself saying 'Wait' or 'I think I saw' — stop and rephrase completely."
 
 ---
 
-### Issue 2: Why Does "Jack_ma" Not Show? (Root Cause)
+### Bug 2: Vibe Chat Opens With "Amara" and Same Line Every Time
 
-In `supabase/functions/tapestry-identity/index.ts`, the **LOOKUP MODE** (lines 196–231) correctly calls Tapestry and gets back `username: "Jack_ma"` — but it **only builds a response object and never writes back to the database**.
-
-The DB write only happens in **CREATE MODE** (lines 170–193).
-
-So:
-- User created their profile with handle "QyLSSxn7" → DB written correctly
-- User later changed their Tapestry username to "Jack_ma" (on Tapestry or during a re-login)
-- Every subsequent lookup fetches "Jack_ma" from Tapestry but discards it without updating the DB
-- The UI reads `display_name` from the DB → still sees "QyLSSxn7"
-
-**Fix: In LOOKUP MODE, after getting a fresh Tapestry username, upsert `display_name` and `username` in the local DB if they differ from what Tapestry returns.**
-
-This is a one-line addition to the lookup path — and it means any time a user logs in, their display name automatically syncs to whatever is current in Tapestry.
-
----
-
-### Issue 3: Queen Tapestry Not Responding (Root Cause)
-
-From the logs, the pattern is clear:
-
+**Root cause — confirmed in `vibe-match/index.ts` lines 12-17:**
 ```
-AI gateway error: 500 - primary model (google/gemini-2.5-pro)
-AI gateway error: 500 - fallback model (google/gemini-2.5-flash-lite)
-→ hardcoded fallback string fires: "Hey! What's good?"
+const AMARA_GREETINGS = [
+  "Hey! 👋 I'm Amara. So tell me, what's your vibe?",
+  "Hi there! I'm Amara, based in Lagos. What brings you here today?",
+  "Hey! Amara here. I'm curious — what's your story?",
+  "Hello! I'm Amara. Let's see if we click sha 💛 What do you do?",
+];
 ```
 
-Wait — the network response shows "Hey! Sorry, got distracted for a sec." still appearing in the conversation history. That is an OLD message already stored in the `direct_messages` table from before the code fix. It is NOT being generated now. The function currently IS falling back to "Hey! What's good?" when both models fail.
+All 4 hardcoded greetings reveal the name "Amara" — the bot's internal codename that should NEVER be shown to users. The persona is "Queen Tapestry." These greetings were written before the persona was locked in and were never updated.
 
-**The actual problem: `google/gemini-2.5-pro` is consistently returning HTTP 500 from the AI Gateway.** The admin changed the model to `google/gemini-2.5-pro` via the admin panel, and that model appears to be unavailable or overloaded right now.
+Additionally, since only 4 options exist and the user has played multiple times, they see the same opener repeatedly. The bot also calls the USER "Amara" in follow-up messages because the model sees "Amara" in the chat_log and confuses it as a user name.
 
-**The fix has two parts:**
+**Fix:**
+Replace `AMARA_GREETINGS` in `vibe-match/index.ts` with 8+ diverse, name-free openers that reflect Queen Tapestry's actual persona — curious, sharp, Lekki-flavored, no name reveal. These should be varied enough that repeat users rarely see the same one twice.
 
-**Part A — Model selection:** Switch the primary to `google/gemini-3-flash-preview` which was working (the `vibe-bot-verdict` succeeded recently), and keep `openai/gpt-5-nano` as a second fallback (different provider entirely, so if Google's gateway is down, OpenAI still works). Also add a third fallback to `google/gemini-2.5-flash-lite`.
-
-**Part B — Defensive coding:** The `direct-chat` function currently returns `{"ok": true}` even when the AI fails and uses the fallback string. The function should still save the message but log clearly that AI failed. More importantly, the fallback string should NOT be "Hey! Sorry, got distracted" (that's the old code) or "Hey! What's good?" — it should be a message that feels natural and continues the conversation, like "Give me a sec... what did you say again?" — but the real fix is making the AI actually work.
-
-**Part C — The `is_mutual_friend` check is blocking:** The `direct-chat` function checks `is_mutual_friend` before processing. For Queen Tapestry (a bot), this friendship is stored differently. Looking at the conversation table — conversations exist and messages ARE being inserted and Queen Tapestry IS replying. So the mutual friend check is passing. The issue is purely the AI gateway returning 500.
+New greetings (no name, no self-introduction, immediate personality):
+```
+"You got 60 seconds to convince me you're interesting. Go. 👀",
+"Okay so — Lagos or outside? Let's start there.",
+"First question: NFTs or music? Don't overthink it.",
+"Right, so are you the type who talks about doing things, or are you actually doing them?",
+"Not going to waste time on small talk — what's the last thing that genuinely surprised you?",
+"Quick vibe check: what's your current obsession? Could be anything.",
+"So what's the energy today — work stress or unbothered?",
+"I'm going to ask you something and I want a real answer: what's actually on your mind lately?",
+```
 
 ---
 
-### Implementation Plan
+### Bug 3: Vibe Bot Sends Unprompted Second Message to Herself
 
-#### Fix 1: `tapestry-identity/index.ts` — Sync display_name on lookup
-In the LOOKUP MODE section (after line 219 where `profile` is built), add a DB write using the service role key to update `display_name` and `username` if the Tapestry username is different from what's currently stored.
+**Root cause — in `src/pages/VibeMatch.tsx` lines 66-87:**
+The nudge interval fires every 5 seconds and checks `Date.now() - lastUserMessageTime.current >= 15000`. But `lastUserMessageTime.current` is initialised at component mount time — NOT at the time the bot sends her first greeting. So:
 
+1. Bot match is made → bot greeting appears (t=0)
+2. User reads the greeting (takes ~5-10 seconds naturally)
+3. Nudge interval fires at t=15s since mount → `silenceDuration >= 15000` → TRUE
+4. `nudgeSentCount.current < 3` → TRUE (it's 0)
+5. Bot fires a second unprompted message BEFORE the user has had a reasonable chance to reply
+
+This is why she sends "I'm basically a mix of Lekki energy..." as a self-nudge — the nudge fires too early.
+
+Additionally, the `vibe-bot-chat` nudge path for `consecutiveBotMessages === 0` says:
 ```
-if (uname) {
-  // Sync display_name to current Tapestry username
-  const supabase = createClient(supabaseUrl, serviceKey);
-  await supabase.from("profiles")
-    .update({ display_name: uname, username: uname, tapestry_id: uname })
-    .eq("wallet_address", walletAddress)
-    .not("display_name", "eq", uname); // only update if different (avoid unnecessary writes)
-}
+"The other person hasn't said anything yet. Send a natural, unique opener..."
 ```
+But since the greeting is already in `chat_log` (sent by BOT_WALLET), `consecutiveBotMessages` will be 1, not 0 — so it falls into the "follow-up" branch and the AI generates a second message about herself, which looks like she's talking to herself.
 
-This means every time any user logs in, their display name self-heals to match Tapestry.
-
-#### Fix 2: `direct-chat/index.ts` — Multi-model fallback chain
-Replace the two-model fallback with a three-model chain:
-1. Primary: read from `app_settings` (currently `google/gemini-2.5-pro`)
-2. Fallback 1: `google/gemini-3-flash-preview`
-3. Fallback 2: `openai/gpt-5-nano`
-
-Also update the `app_settings` default for `bot_model` back to `google/gemini-3-flash-preview` since `google/gemini-2.5-pro` is consistently returning 500. The admin can change this at any time via the admin panel.
-
-#### Fix 3: Update `app_settings` bot_model back to working model
-The admin changed `bot_model` to `google/gemini-2.5-pro` via the admin panel — that model appears to be consistently returning 500. Reset it to `google/gemini-3-flash-preview` via a database update. No migration needed — just a direct `UPDATE app_settings SET value = 'google/gemini-3-flash-preview' WHERE key = 'bot_model'`.
-
-#### Fix 4: `vibe-bot-chat/index.ts` — Same three-model fallback chain
-Apply the same multi-provider fallback to the vibe chat bot.
+**Fix:**
+- **Increase the nudge silence threshold from 15 seconds to 30 seconds** for the first nudge (consecutiveBotMessages === 0 means no user reply yet). This gives users a proper window to read and type.
+- **Set `lastUserMessageTime.current` to the time the bot's greeting was received** (when `initialMessages` arrive), not mount time. This ensures the 30-second clock starts when the user actually sees the bot's message.
+- **Add a minimum delay**: never send a nudge within the first 20 seconds of the session starting regardless.
 
 ---
 
-### Files Changed
+### Files to Change
 
 | File | Change |
 |------|--------|
-| `supabase/functions/tapestry-identity/index.ts` | Add DB write in LOOKUP MODE to sync display_name/username from Tapestry |
-| `supabase/functions/direct-chat/index.ts` | Add three-model fallback chain (gemini-3-flash-preview → gpt-5-nano → gemini-2.5-flash-lite) |
-| `supabase/functions/vibe-bot-chat/index.ts` | Same three-model fallback chain |
+| `supabase/functions/vibe-match/index.ts` | Replace `AMARA_GREETINGS` with 8 name-free, persona-authentic openers |
+| `src/pages/VibeMatch.tsx` | Fix nudge timing: set `lastUserMessageTime` on bot greeting receipt; increase threshold to 30s; add 20s minimum session guard |
+| `supabase/functions/direct-chat/index.ts` | Inject bot's last 5 replies as anti-repetition context; trim to 20 messages |
 
-### Database Change (no migration needed — just a settings update)
-Reset `bot_model` in `app_settings` back to `google/gemini-3-flash-preview` via direct SQL update.
+### Database Change (no migration — settings update only)
+- Update `bot_max_tokens` from 300 → 120 in `app_settings`
+- Update `bot_prompt_dm` to add the CRITICAL anti-repetition rule at the top of the RULES section
 
 ### What Is NOT Changing
-- No UI changes — `Friends.tsx` display name logic is already correct (`displayName ?? username`)
-- No schema changes
-- No RLS policy changes
-- Admin panel Queen Tapestry card stays as-is — it works correctly and correctly saved the `gemini-2.5-pro` setting
+- The AI model chain (already fixed and working — logs show no gateway errors)
+- The `is_mutual_friend` check (working correctly)  
+- The admin panel (no changes needed)
+- The `vibe-bot-chat` nudge logic in the edge function (the issue is in the React timing, not the edge function)
+- Schema or RLS policies
 
-### Advisory Challenge to My Own Plan
-**Challenge:** Why is `google/gemini-3-flash-preview` reliable but `google/gemini-2.5-pro` not? They're both on the same gateway.
+### Challenge to My Own Plan
+**Challenge:** Won't reducing max_tokens to 120 make replies too short?
 
-**Answer:** Preview models are often on separate infrastructure with higher availability. The `gemini-2.5-pro` may have rate limits or be in higher demand. Adding a cross-provider fallback (OpenAI `gpt-5-nano`) ensures that if Google's models are down entirely, the bot still responds via OpenAI's infrastructure. This is the correct production-grade approach.
+**Answer:** The prompt already says "1-3 sentences max." 120 tokens is about 90 words — plenty for 3 natural sentences. The current 300 token limit is causing the model to write longer, more repetitive answers. Shorter = better for a chat persona.
 
-**Challenge:** Will adding a DB write in lookup mode cause performance issues?
+**Challenge:** Won't 8 greetings still repeat for heavy users?
 
-**Answer:** The write only fires when the Tapestry username DIFFERS from what's in the DB (`.not("display_name", "eq", uname)`). After the first sync, subsequent logins skip the write entirely. Cost is ~5ms per new sync, zero on subsequent calls.
+**Answer:** Yes, but far less than 4. The real fix is eventually making the greeting AI-generated on each session start (so it's always unique). That's a future improvement — for now 8 well-crafted openers are a significant improvement over 4 name-revealing ones.
