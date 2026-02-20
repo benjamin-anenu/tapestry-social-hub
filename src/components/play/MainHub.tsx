@@ -145,7 +145,7 @@ const MainHub = () => {
                 </Badge>
               )}
             </span>
-            <span className="font-mono text-[10px] text-muted-foreground">
+            <span className="font-mono text-[10px] text-muted-foreground text-left w-full">
               {card.desc}
             </span>
           </div>
