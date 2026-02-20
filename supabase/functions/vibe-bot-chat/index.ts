@@ -54,7 +54,7 @@ async function callAI(apiKey: string, model: string, messages: object[], maxToke
     return null;
   }
   const data = await resp.json();
-  return data.choices?.[0]?.message?.content?.trim() ?? null;
+  return data.choices?.[0]?.message?.content?.trim() || null;
 }
 
 Deno.serve(async (req) => {
@@ -164,6 +164,13 @@ Deno.serve(async (req) => {
         reply = await callAI(LOVABLE_API_KEY, "google/gemini-2.5-flash-lite", aiMessages, botMaxTokens);
       }
       amaraResponse = reply ?? DEFAULT_FALLBACK_RESPONSES[Math.floor(Math.random() * DEFAULT_FALLBACK_RESPONSES.length)];
+    }
+
+    // Guard: never append empty bot messages
+    if (!amaraResponse || amaraResponse.trim() === "") {
+      return new Response(JSON.stringify({ ok: true, botReply: null, silenced: true }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     // Append bot response
