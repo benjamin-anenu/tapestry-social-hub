@@ -1,99 +1,73 @@
 
-## Two Fixes: Text Alignment + Queen Tapestry Self-Reply Root Cause
+## Root Cause Found — Two Distinct Issues
 
----
+### What the Database Reveals
 
-### Fix 1: Card Subtitle Alignment
+Querying the actual session from the problem report shows this exact sequence:
 
-**What the user sees:** The text "60s vibe check with a random stranger" appears centered instead of left-aligned.
-
-**Root cause (line 148, `MainHub.tsx`):**
-```tsx
-<span className="font-mono text-[10px] text-muted-foreground">
-  {card.desc}
-</span>
 ```
-The parent `<div>` at line 139 uses `items-start` which should left-align children — but `font-mono text-[10px]` on a `<span>` still stretches to fill flex width on some screen sizes, causing it to appear centered. The fix is to add `text-left` explicitly to the `<span>` and ensure `w-full` on the text container div to prevent any ambiguity.
+t=0s    BOT:  "Skip the resume and tell me the one hill..."  ← AI-generated opener
+t=9s    USER: "😂"                                           ← user DID reply
+t=11s   BOT:  "Plantain should only be fried when it's..."  ← normal reply to "😂"
+t=42s   BOT:  ""                                             ← nudge fires — EMPTY STRING
+```
 
-**Fix:** Add `text-left w-full` to the desc `<span>`.
+Two separate problems are happening:
 
 ---
 
-### Fix 2: Queen Tapestry Talking to Herself — Root Cause Found
+### Problem 1 — The Nudge Fires Too Soon After Bot Replies
 
-**Reverse-engineering the exact sequence of events:**
+**The flaw in the current logic:**
 
-After the last round of fixes, the nudge timing in `VibeMatch.tsx` was improved. But there is **still one critical path** that bypasses those fixes completely:
+`lastUserMessageTime.current` resets when the USER sends a message (in `handleSendMessage`). But here's what actually happens:
 
-**The `vibe-match-poll` path (lines 157–159 in `VibeMatch.tsx`):**
+1. User sends "😂" → `lastUserMessageTime.current = now` (say, t=9s)
+2. Bot generates "Plantain..." reply → takes ~2s → shown at t=11s
+3. Nudge interval fires at t=14s (every 5s, next tick after bot reply)
+4. `sessionAge` check: 35s guard — passes if session was started >35s ago
+5. `silenceDuration = now - lastUserMessageTime.current` = `t=14s - t=9s` = **5 seconds** — this should FAIL the 30s threshold
+
+Wait — but the DB shows the nudge fired at t=42s, which IS >30s after the user's t=9s message. So the timing guard IS working, but the bot fires after 30s of silence which is exactly correct behaviour... except the user may have expected more time to respond to the bot's "Plantain" message.
+
+**The real issue:** `lastUserMessageTime.current` resets on USER message — but NOT when the BOT sends a reply. So after the bot replies at t=11s, the 30s silence clock is still counting from t=9s (user's "😂"), NOT from t=11s (when the bot finished replying). This means the user has only ~28s of actual reading/thinking time from when the bot's reply appeared, not 30s.
+
+**But more critically:** The bot's reply appears at t=11s. The nudge fires at t=42s (30s after user's "😂" at t=9s — but only 31s after the bot's reply). The user sees the bot reply at t=11s and effectively only has ~31s to read it and respond before a nudge fires. Given the context (reading "Plantain should only be fried when it's borderline overripe, almost black..."), this is tight.
+
+**The clean fix:** Reset `lastUserMessageTime.current` to `Date.now()` immediately after the bot sends its reply in `handleSendMessage`. This way the 30s silence timer starts from when the USER SEES the bot's response, not from when the user last typed.
+
+---
+
+### Problem 2 — Empty String Bot Message Appended to Chat Log
+
+The database shows message 4 is literally `""` (empty string). The `callAI` function returns `data.choices?.[0]?.message?.content?.trim() ?? null`. If the AI returns an empty or whitespace-only string, `trim()` produces `""` — which is truthy-falsy ambiguous in JS. The fallback chain only triggers on `null`, not on `""`. So an empty string passes all the way through and gets appended to the DB and shown in the UI.
+
+**Fix:** In `vibe-bot-chat/index.ts`, add a guard: if `amaraResponse` is an empty string after all fallbacks, return `{ ok: true, botReply: null, silenced: true }` instead of appending it. Also fix `callAI` to return `null` if the trimmed content is empty.
+
+---
+
+### Files to Change
+
+**`src/pages/VibeMatch.tsx`** — one change only:
+In `handleSendMessage`, after the bot's reply is appended via `setMessages`, immediately reset `lastUserMessageTime.current = Date.now()`. This means the 30s silence window starts from when the bot finishes replying, not from when the user last typed.
 
 ```tsx
-if (data.isBot && Array.isArray(data.initialMessages)) {
-  setMessages(data.initialMessages.map(...));
+// After:
+if (data?.botReply) {
+  setMessages((prev) => [...prev, { time: Date.now(), sender: "them", text: data.botReply }]);
+  lastUserMessageTime.current = Date.now(); // ← ADD THIS
 }
-// ⚠️ MISSING: sessionStartTime.current and lastUserMessageTime.current are NOT reset here
 ```
 
-Compare that to the `vibe-match` direct match path (lines 119–125):
-```tsx
-if (data.isBot && Array.isArray(data.initialMessages)) {
-  const now = Date.now();
-  sessionStartTime.current = now;       // ✅ Present
-  lastUserMessageTime.current = now;    // ✅ Present
-  nudgeSentCount.current = 0;           // ✅ Present
-  setMessages(...);
-}
-```
-
-**The poll path never resets the timers.** So when a user goes through the waiting → bot-fallback path (which is the most common path in `vibe-match-poll`), both `sessionStartTime.current` and `lastUserMessageTime.current` are still set to the **component mount time** — which could be 5–10 seconds BEFORE the bot match even arrives. The nudge interval then calculates:
-
-```
-sessionAge = now - sessionStartTime.current  
-→ Already > 20,000ms (bypasses the minimum guard)
-
-silenceDuration = now - lastUserMessageTime.current  
-→ Already > 30,000ms (bypasses the silence threshold)
-```
-
-Result: The nudge fires **immediately** when the chatting phase opens, making it look like Queen Tapestry replied to herself before the user even had a chance to read her opener.
-
-**Why does the `vibe-match` direct path sometimes also fail?**
-
-Even in the direct match path, there is a race condition. The `sessionStartTime.current = now` is set at the moment `data.isBot && data.initialMessages` are processed — but the nudge `useEffect` depends on `[isBot, phase, sessionId, walletAddress]`. If React batches the state updates (`setIsBot(true)` → effect fires → `sessionStartTime` hasn't been set yet), the interval can start before the reset runs. This is a subtle but real ordering issue.
-
-**The clean fix:**
-
-1. **`VibeMatch.tsx` — poll path**: Add the same three timer resets to the `vibe-match-poll` handler that exist in the `vibe-match` handler:
-   ```tsx
-   if (data.isBot && Array.isArray(data.initialMessages)) {
-     const now = Date.now();
-     sessionStartTime.current = now;        // ADD THIS
-     lastUserMessageTime.current = now;     // ADD THIS
-     nudgeSentCount.current = 0;            // ADD THIS
-     setMessages(...);
-   }
-   ```
-
-2. **`VibeMatch.tsx` — increase minimum session guard**: Raise the minimum session guard from 20s to **35s**. The current 20s is still not enough if the bot greeting arrives at t=18s (e.g., AI generation took time). At 35s, the user always gets a comfortable reading window regardless of when the match was made.
-
-3. **`vibe-bot-chat/index.ts` — the nudge instruction when `consecutiveBotMessages === 0`**: Currently this says:
-   ```
-   "The other person hasn't said anything yet. Send a natural, unique opener."
-   ```
-   But the greeting is already in `chat_log` — so `consecutiveBotMessages` is already 1. The check for `=== 0` is dead code and confusing. **Remove it** and consolidate nudge paths:
-   - `consecutiveBotMessages === 1` → "They haven't replied yet. Try a different angle or ask something new."
-   - `consecutiveBotMessages >= 2` → "Final quiet nudge — brief and natural."
-   
-   This prevents the AI from thinking it needs to "introduce itself again" which produces the self-talking intro messages.
+**`supabase/functions/vibe-bot-chat/index.ts`** — two changes:
+1. In `callAI`: return `null` if trimmed content is empty (`content?.trim() || null` instead of `content?.trim() ?? null`)
+2. Before appending bot response: add guard — `if (!amaraResponse || amaraResponse.trim() === "") return silenced response`
 
 ---
 
-### Files Changed
-
-| File | Change |
-|------|--------|
-| `src/components/play/MainHub.tsx` | Add `text-left` to the desc `<span>` (line 148) |
-| `src/pages/VibeMatch.tsx` | Add timer resets to poll path (lines 157–159); raise session guard to 35s |
-| `supabase/functions/vibe-bot-chat/index.ts` | Fix nudge branch logic: remove dead `consecutiveBotMessages === 0` case, clean up nudge instructions |
-
-No schema changes. No new functions. No new deployments beyond what's changed.
+### What Is NOT Changing
+- The 35s session guard (working correctly)
+- The 30s silence threshold (correct — just needs to start from bot reply time, not user message time)
+- The nudge count limit (`bot_max_nudges = 3`)
+- The edge function model chain
+- Schema, RLS, or any other files
