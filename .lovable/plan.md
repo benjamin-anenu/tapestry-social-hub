@@ -1,81 +1,90 @@
 
-## AI-Generated Vibe Opener — Dynamic, Unique Every Time
-
-### The Problem With Hardcoded Openers
-
-Right now, `vibe-match/index.ts` picks randomly from 8 fixed strings. Even with 8 options, a frequent user will cycle through all of them within their first week. And you're right — no human texts the same opening line twice. The probability of a real person starting with the exact same high-energy opener in back-to-back sessions is effectively zero. A hardcoded list will always feel robotic to power users.
-
-There is also a second problem hiding in `vibe-match-poll/index.ts` — the poll fallback path (for users who waited and got bot-matched from the queue) still uses the **old Amara greetings** that reveal the name. That was missed in the last fix.
+## Two Fixes: Text Alignment + Queen Tapestry Self-Reply Root Cause
 
 ---
 
-### The Solution: AI-Seeded Dynamic Openers
+### Fix 1: Card Subtitle Alignment
 
-Instead of picking a hardcoded string, the `vibe-match` function will:
+**What the user sees:** The text "60s vibe check with a random stranger" appears centered instead of left-aligned.
 
-1. Pick one of the 8 openers as a **creative seed / style reference**
-2. Call the AI with a focused one-shot prompt: *"Here is an example opener in your style. Generate a completely different opener in the same spirit — same energy, same personality, no name reveal, no intro, direct and punchy. One sentence only."*
-3. Store the AI-generated opener in the session's `chat_log`
-4. Return it to the client as `initialMessages`
-
-If the AI call fails (network error, rate limit, etc.), it falls back to the seed string itself — so the user always sees something.
-
-**Key design choices:**
-- The AI call is deliberately minimal: 1 system message + 1 user message, `max_tokens: 60`. This keeps latency low (under 500ms) and cost negligible.
-- The seed is picked randomly, so the AI has a different creative starting point each time — even if the AI generated something similar before, the seed variation steers it differently.
-- No extra round-trip to the client — the greeting is generated server-side and embedded into the session before the response is returned.
-- `vibe-match-poll` gets the same treatment, replacing the old `AMARA_GREETINGS` (still Amara-named) with the same AI generation logic.
-
----
-
-### What Changes
-
-**`supabase/functions/vibe-match/index.ts`**
-
-- Add a `generateOpener(apiKey, seed, botPrompt)` async function that calls the AI gateway with a tight prompt
-- Replace the one-liner `BOT_GREETINGS[random]` with `await generateOpener(...)`
-- The 8 seeds remain as the pool of style references — they are not shown to users directly anymore
-
-**`supabase/functions/vibe-match-poll/index.ts`**
-
-- Fix the still-broken `AMARA_GREETINGS` array (old name-revealing greetings — missed in the last fix)
-- Apply the same `generateOpener(...)` pattern for the bot-fallback path
-
----
-
-### The AI Prompt for Opener Generation
-
+**Root cause (line 148, `MainHub.tsx`):**
+```tsx
+<span className="font-mono text-[10px] text-muted-foreground">
+  {card.desc}
+</span>
 ```
-SYSTEM: You are Queen Tapestry — a sharp, Lekki-raised, well-traveled 25-year-old woman. 
-You're on a 60-second vibe-matching app. Generate ONE opening message. 
-Rules: No name, no intro, no "I'm...", immediate personality, punchy, max 1 sentence, 
-0-1 emoji, unique every time.
+The parent `<div>` at line 139 uses `items-start` which should left-align children — but `font-mono text-[10px]` on a `<span>` still stretches to fill flex width on some screen sizes, causing it to appear centered. The fix is to add `text-left` explicitly to the `<span>` and ensure `w-full` on the text container div to prevent any ambiguity.
 
-USER: Here's an example of your style: "{seed}"
-Generate a completely different opener with the same energy. One sentence only.
+**Fix:** Add `text-left w-full` to the desc `<span>`.
+
+---
+
+### Fix 2: Queen Tapestry Talking to Herself — Root Cause Found
+
+**Reverse-engineering the exact sequence of events:**
+
+After the last round of fixes, the nudge timing in `VibeMatch.tsx` was improved. But there is **still one critical path** that bypasses those fixes completely:
+
+**The `vibe-match-poll` path (lines 157–159 in `VibeMatch.tsx`):**
+
+```tsx
+if (data.isBot && Array.isArray(data.initialMessages)) {
+  setMessages(data.initialMessages.map(...));
+}
+// ⚠️ MISSING: sessionStartTime.current and lastUserMessageTime.current are NOT reset here
 ```
 
-`max_tokens: 60` — enough for one punchy sentence, fast to generate.
+Compare that to the `vibe-match` direct match path (lines 119–125):
+```tsx
+if (data.isBot && Array.isArray(data.initialMessages)) {
+  const now = Date.now();
+  sessionStartTime.current = now;       // ✅ Present
+  lastUserMessageTime.current = now;    // ✅ Present
+  nudgeSentCount.current = 0;           // ✅ Present
+  setMessages(...);
+}
+```
 
----
+**The poll path never resets the timers.** So when a user goes through the waiting → bot-fallback path (which is the most common path in `vibe-match-poll`), both `sessionStartTime.current` and `lastUserMessageTime.current` are still set to the **component mount time** — which could be 5–10 seconds BEFORE the bot match even arrives. The nudge interval then calculates:
 
-### Latency Consideration
+```
+sessionAge = now - sessionStartTime.current  
+→ Already > 20,000ms (bypasses the minimum guard)
 
-The AI call adds ~300–600ms to the match response. This is acceptable because:
-- The user has just been through a "searching" animation
-- There is already a `chat_starts_at` delay of 4 seconds before chat opens
-- The opener generation happens in parallel with the session insert, not sequentially
+silenceDuration = now - lastUserMessageTime.current  
+→ Already > 30,000ms (bypasses the silence threshold)
+```
 
-To make it parallel: `Promise.all([session insert, generateOpener()])` — both happen simultaneously. The session is created with the AI greeting inserted.
+Result: The nudge fires **immediately** when the chatting phase opens, making it look like Queen Tapestry replied to herself before the user even had a chance to read her opener.
 
----
+**Why does the `vibe-match` direct path sometimes also fail?**
 
-### Fallback Safety
+Even in the direct match path, there is a race condition. The `sessionStartTime.current = now` is set at the moment `data.isBot && data.initialMessages` are processed — but the nudge `useEffect` depends on `[isBot, phase, sessionId, walletAddress]`. If React batches the state updates (`setIsBot(true)` → effect fires → `sessionStartTime` hasn't been set yet), the interval can start before the reset runs. This is a subtle but real ordering issue.
 
-If `generateOpener()` fails for any reason:
-- Returns the seed string directly (still a good, name-free opener)
-- Never throws — wrapped in try/catch
-- No user-visible error
+**The clean fix:**
+
+1. **`VibeMatch.tsx` — poll path**: Add the same three timer resets to the `vibe-match-poll` handler that exist in the `vibe-match` handler:
+   ```tsx
+   if (data.isBot && Array.isArray(data.initialMessages)) {
+     const now = Date.now();
+     sessionStartTime.current = now;        // ADD THIS
+     lastUserMessageTime.current = now;     // ADD THIS
+     nudgeSentCount.current = 0;            // ADD THIS
+     setMessages(...);
+   }
+   ```
+
+2. **`VibeMatch.tsx` — increase minimum session guard**: Raise the minimum session guard from 20s to **35s**. The current 20s is still not enough if the bot greeting arrives at t=18s (e.g., AI generation took time). At 35s, the user always gets a comfortable reading window regardless of when the match was made.
+
+3. **`vibe-bot-chat/index.ts` — the nudge instruction when `consecutiveBotMessages === 0`**: Currently this says:
+   ```
+   "The other person hasn't said anything yet. Send a natural, unique opener."
+   ```
+   But the greeting is already in `chat_log` — so `consecutiveBotMessages` is already 1. The check for `=== 0` is dead code and confusing. **Remove it** and consolidate nudge paths:
+   - `consecutiveBotMessages === 1` → "They haven't replied yet. Try a different angle or ask something new."
+   - `consecutiveBotMessages >= 2` → "Final quiet nudge — brief and natural."
+   
+   This prevents the AI from thinking it needs to "introduce itself again" which produces the self-talking intro messages.
 
 ---
 
@@ -83,13 +92,8 @@ If `generateOpener()` fails for any reason:
 
 | File | Change |
 |------|--------|
-| `supabase/functions/vibe-match/index.ts` | Add `generateOpener()` helper, replace hardcoded pick with AI call, insert generated greeting into session |
-| `supabase/functions/vibe-match-poll/index.ts` | Replace old `AMARA_GREETINGS` (still name-revealing), apply same `generateOpener()` for bot fallback path |
+| `src/components/play/MainHub.tsx` | Add `text-left` to the desc `<span>` (line 148) |
+| `src/pages/VibeMatch.tsx` | Add timer resets to poll path (lines 157–159); raise session guard to 35s |
+| `supabase/functions/vibe-bot-chat/index.ts` | Fix nudge branch logic: remove dead `consecutiveBotMessages === 0` case, clean up nudge instructions |
 
-No UI changes. No schema changes. No new edge functions.
-
-### What Is NOT Changing
-- The `vibe-bot-chat` function (handles subsequent messages — this is only the opener)
-- The nudge timing logic in `VibeMatch.tsx`
-- The `direct-chat` function
-- Any admin panel settings
+No schema changes. No new functions. No new deployments beyond what's changed.
