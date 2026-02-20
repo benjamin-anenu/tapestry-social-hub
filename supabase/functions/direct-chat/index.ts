@@ -133,23 +133,36 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Load recent DM history for context
+      // Load recent DM history for context (trimmed to 20 most recent)
       const { data: recentDMs } = await supabase
         .from("direct_messages")
         .select("sender_id, text")
         .or(
           `and(sender_id.eq.${senderProfileId},receiver_id.eq.${receiverProfileId}),and(sender_id.eq.${receiverProfileId},receiver_id.eq.${senderProfileId})`
         )
-        .order("created_at", { ascending: true })
-        .limit(30);
+        .order("created_at", { ascending: false })
+        .limit(20);
 
-      const dmHistory = (recentDMs ?? []).map(dm => ({
+      // Reverse to get chronological order
+      const dmHistoryRaw = (recentDMs ?? []).reverse();
+
+      // Extract bot's last 5 replies for anti-repetition injection
+      const botPriorReplies = dmHistoryRaw
+        .filter(dm => dm.sender_id === receiverProfileId)
+        .slice(-5)
+        .map(dm => `- "${dm.text}"`);
+
+      const antiRepetitionBlock = botPriorReplies.length > 0
+        ? `\n\nCRITICAL — YOUR RECENT MESSAGES (DO NOT REPEAT ANY OF THESE PHRASES OR IDEAS):\n${botPriorReplies.join("\n")}\nScan the above before you reply. If your draft says anything similar to any of these — rephrase completely.`
+        : "";
+
+      const dmHistory = dmHistoryRaw.map(dm => ({
         role: dm.sender_id === receiverProfileId ? "assistant" as const : "user" as const,
         content: dm.text,
       }));
 
       const aiMessages = [
-        { role: "system", content: botPrompt + vibeContext },
+        { role: "system", content: botPrompt + vibeContext + antiRepetitionBlock },
         ...dmHistory,
       ];
 

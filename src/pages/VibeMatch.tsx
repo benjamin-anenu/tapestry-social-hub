@@ -48,6 +48,7 @@ const VibeMatch = () => {
   const lastUserMessageTime = useRef<number>(Date.now());
   const nudgeSentCount = useRef<number>(0);
   const submittingVerdict = useRef(false);
+  const sessionStartTime = useRef<number>(Date.now());
 
   // === HEARTBEAT ===
   useEffect(() => {
@@ -62,14 +63,21 @@ const VibeMatch = () => {
     };
   }, [walletAddress]);
 
-  // Bot nudge
+  // Bot nudge — fires every 5s but requires:
+  // 1. At least 20s since session started (minimum session guard)
+  // 2. At least 30s of user silence before first nudge
+  // 3. lastUserMessageTime resets when bot greeting arrives (not on mount)
   useEffect(() => {
     if (!isBot || phase !== "chatting" || !sessionId || !walletAddress) return;
     const interval = setInterval(async () => {
-      const silenceDuration = Date.now() - lastUserMessageTime.current;
-      if (silenceDuration >= 15000 && nudgeSentCount.current < 3) {
+      const now = Date.now();
+      const sessionAge = now - sessionStartTime.current;
+      const silenceDuration = now - lastUserMessageTime.current;
+      // Minimum 20s session guard + 30s silence threshold
+      if (sessionAge < 20000) return;
+      if (silenceDuration >= 30000 && nudgeSentCount.current < 3) {
         nudgeSentCount.current += 1;
-        lastUserMessageTime.current = Date.now();
+        lastUserMessageTime.current = now;
         setIsTyping(true);
         try {
           const { data } = await supabase.functions.invoke("vibe-bot-chat", {
@@ -109,6 +117,11 @@ const VibeMatch = () => {
             setPhase("chatting");
           }
           if (data.isBot && Array.isArray(data.initialMessages)) {
+            const now = Date.now();
+            // Reset both timers when bot greeting is received — not at mount time
+            sessionStartTime.current = now;
+            lastUserMessageTime.current = now;
+            nudgeSentCount.current = 0;
             setMessages(data.initialMessages.map((m: any) => ({ time: m.time, sender: m.sender, text: m.text })));
           }
         } else if (data?.status === "waiting" && data?.sessionId) {

@@ -9,11 +9,15 @@ const BOT_WALLET = "BOT_AMARA_001";
 const FRESHNESS_WINDOW_MS = 5 * 60 * 1000;
 const SESSION_EXPIRY_MS = 3 * 60 * 1000;
 
-const AMARA_GREETINGS = [
-  "Hey! 👋 I'm Amara. So tell me, what's your vibe?",
-  "Hi there! I'm Amara, based in Lagos. What brings you here today?",
-  "Hey! Amara here. I'm curious — what's your story?",
-  "Hello! I'm Amara. Let's see if we click sha 💛 What do you do?",
+const BOT_GREETINGS = [
+  "You got 60 seconds to convince me you're interesting. Go. 👀",
+  "Okay so — Lagos or outside? Let's start there.",
+  "First question: NFTs or music? Don't overthink it.",
+  "Right, so are you the type who talks about doing things, or are you actually doing them?",
+  "Not going to waste time on small talk — what's the last thing that genuinely surprised you?",
+  "Quick vibe check: what's your current obsession? Could be anything.",
+  "So what's the energy today — work stress or unbothered?",
+  "I'm going to ask you something and I want a real answer: what's actually on your mind lately?",
 ];
 
 Deno.serve(async (req) => {
@@ -253,7 +257,7 @@ Deno.serve(async (req) => {
       .single();
 
     if (botProfile) {
-      const greeting = AMARA_GREETINGS[Math.floor(Math.random() * AMARA_GREETINGS.length)];
+      const greeting = BOT_GREETINGS[Math.floor(Math.random() * BOT_GREETINGS.length)];
 
       const { data: session, error: sessionErr } = await supabase
         .from("vibe_sessions")
