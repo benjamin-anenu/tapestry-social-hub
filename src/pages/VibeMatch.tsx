@@ -73,8 +73,8 @@ const VibeMatch = () => {
       const now = Date.now();
       const sessionAge = now - sessionStartTime.current;
       const silenceDuration = now - lastUserMessageTime.current;
-      // Minimum 20s session guard + 30s silence threshold
-      if (sessionAge < 20000) return;
+      // Minimum 35s session guard + 30s silence threshold
+      if (sessionAge < 35000) return;
       if (silenceDuration >= 30000 && nudgeSentCount.current < 3) {
         nudgeSentCount.current += 1;
         lastUserMessageTime.current = now;
@@ -155,6 +155,10 @@ const VibeMatch = () => {
             setPhase("chatting");
           }
           if (data.isBot && Array.isArray(data.initialMessages)) {
+            const now = Date.now();
+            sessionStartTime.current = now;
+            lastUserMessageTime.current = now;
+            nudgeSentCount.current = 0;
             setMessages(data.initialMessages.map((m: any) => ({ time: m.time, sender: m.sender, text: m.text })));
           }
         } else if (data?.status === "waiting") {

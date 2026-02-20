@@ -133,12 +133,10 @@ Deno.serve(async (req) => {
     // Build nudge instruction
     let nudgeInstruction = "";
     if (isNudge) {
-      if (consecutiveBotMessages === 0) {
-        nudgeInstruction = "\n\n[SYSTEM: The other person hasn't said anything yet. Send a natural, unique opener. Check the conversation history to make sure you don't repeat previous openers.]";
-      } else if (consecutiveBotMessages === 1) {
-        nudgeInstruction = "\n\n[SYSTEM: They haven't replied to your last message. Send ONE short natural follow-up — maybe a different topic or a playful nudge. Don't repeat yourself.]";
+      if (consecutiveBotMessages <= 1) {
+        nudgeInstruction = "\n\n[SYSTEM: They haven't replied to your last message yet. Try a different angle — ask something new, switch topics, or say something that genuinely invites a response. One sentence only. Do NOT re-introduce yourself.]";
       } else {
-        nudgeInstruction = "\n\n[SYSTEM: You've sent multiple messages without a reply. Send ONE final brief message — something like what a real person would say when someone's not responding. Keep it very short and natural. After this, you'll go quiet.]";
+        nudgeInstruction = "\n\n[SYSTEM: They still haven't replied. Send ONE final brief message — something a real person would send when someone's gone quiet. Very short, casual, natural. After this, you'll go quiet too.]";
       }
     }
 
