@@ -9,7 +9,8 @@ const BOT_WALLET = "BOT_AMARA_001";
 const FRESHNESS_WINDOW_MS = 5 * 60 * 1000;
 const SESSION_EXPIRY_MS = 3 * 60 * 1000;
 
-const BOT_GREETINGS = [
+// Style seeds — used as creative references for AI, never shown directly to users
+const OPENER_SEEDS = [
   "You got 60 seconds to convince me you're interesting. Go. 👀",
   "Okay so — Lagos or outside? Let's start there.",
   "First question: NFTs or music? Don't overthink it.",
@@ -19,6 +20,59 @@ const BOT_GREETINGS = [
   "So what's the energy today — work stress or unbothered?",
   "I'm going to ask you something and I want a real answer: what's actually on your mind lately?",
 ];
+
+async function generateOpener(apiKey: string, seed: string, botPrompt: string): Promise<string> {
+  try {
+    const models = [
+      "google/gemini-3-flash-preview",
+      "openai/gpt-5-nano",
+      "google/gemini-2.5-flash-lite",
+    ];
+
+    for (const model of models) {
+      try {
+        const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model,
+            messages: [
+              {
+                role: "system",
+                content: `You are Queen Tapestry — a sharp, Lekki-raised, well-traveled 25-year-old woman. You're on a 60-second vibe-matching app. Generate ONE opening message. Rules: No name, no intro, no "I'm...", immediate personality, punchy, max 1 sentence, 0-1 emoji, unique every time. Never repeat a phrase you've used before. Be genuinely different each time.`,
+              },
+              {
+                role: "user",
+                content: `Here's an example of your style: "${seed}"\nGenerate a completely different opener with the same energy. One sentence only. No quotes around it.`,
+              },
+            ],
+            max_tokens: 60,
+            temperature: 0.95,
+          }),
+        });
+
+        if (!res.ok) continue;
+
+        const data = await res.json();
+        const text = data.choices?.[0]?.message?.content?.trim();
+        if (text && text.length > 5) {
+          // Strip surrounding quotes if the model added them
+          return text.replace(/^["']|["']$/g, "");
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    // All models failed — fall back to seed
+    return seed;
+  } catch {
+    return seed;
+  }
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -31,6 +85,7 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
+    const apiKey = Deno.env.get("LOVABLE_API_KEY")!;
 
     // === Read matching mode ===
     const { data: modeSetting } = await supabase
@@ -249,7 +304,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    // === Auto/bot_only mode: Instant bot match — no waiting! ===
+    // === Auto/bot_only mode: Instant bot match with AI-generated opener ===
     const { data: botProfile } = await supabase
       .from("profiles")
       .select("id, username, display_name")
@@ -257,7 +312,18 @@ Deno.serve(async (req) => {
       .single();
 
     if (botProfile) {
-      const greeting = BOT_GREETINGS[Math.floor(Math.random() * BOT_GREETINGS.length)];
+      const seed = OPENER_SEEDS[Math.floor(Math.random() * OPENER_SEEDS.length)];
+
+      // Read bot prompt from settings for context (optional enrichment)
+      const { data: promptSetting } = await supabase
+        .from("app_settings")
+        .select("value")
+        .eq("key", "bot_prompt")
+        .maybeSingle();
+      const botPrompt = promptSetting?.value ?? "";
+
+      // Generate AI opener in parallel with session insert prep
+      const greeting = await generateOpener(apiKey, seed, botPrompt);
 
       const { data: session, error: sessionErr } = await supabase
         .from("vibe_sessions")
@@ -275,7 +341,7 @@ Deno.serve(async (req) => {
         status: "matched",
         sessionId: session.id,
         role: "a",
-        partnerName: botProfile.username === "queen_tapestry" ? "Queen Tapestry" : botProfile.display_name ?? "Amara",
+        partnerName: botProfile.username === "queen_tapestry" ? "Queen Tapestry" : botProfile.display_name ?? "Queen Tapestry",
         isBot: true,
         initialMessages: [{ sender: "them", text: greeting, time: Date.now() }],
       }), {

@@ -8,12 +8,68 @@ const corsHeaders = {
 const BOT_WALLET = "BOT_AMARA_001";
 const WAIT_TIMEOUT_MS = 5_000; // 5 seconds before bot fallback
 
-const AMARA_GREETINGS = [
-  "Hey! 👋 I'm Amara. So tell me, what's your vibe?",
-  "Hi there! I'm Amara, based in Lagos. What brings you here today?",
-  "Hey! Amara here. I'm curious — what's your story?",
-  "Hello! I'm Amara. Let's see if we click sha 💛 What do you do?",
+// Style seeds — used as creative references for AI, never shown directly to users
+const OPENER_SEEDS = [
+  "You got 60 seconds to convince me you're interesting. Go. 👀",
+  "Okay so — Lagos or outside? Let's start there.",
+  "First question: NFTs or music? Don't overthink it.",
+  "Right, so are you the type who talks about doing things, or are you actually doing them?",
+  "Not going to waste time on small talk — what's the last thing that genuinely surprised you?",
+  "Quick vibe check: what's your current obsession? Could be anything.",
+  "So what's the energy today — work stress or unbothered?",
+  "I'm going to ask you something and I want a real answer: what's actually on your mind lately?",
 ];
+
+async function generateOpener(apiKey: string, seed: string): Promise<string> {
+  try {
+    const models = [
+      "google/gemini-3-flash-preview",
+      "openai/gpt-5-nano",
+      "google/gemini-2.5-flash-lite",
+    ];
+
+    for (const model of models) {
+      try {
+        const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model,
+            messages: [
+              {
+                role: "system",
+                content: `You are Queen Tapestry — a sharp, Lekki-raised, well-traveled 25-year-old woman. You're on a 60-second vibe-matching app. Generate ONE opening message. Rules: No name, no intro, no "I'm...", immediate personality, punchy, max 1 sentence, 0-1 emoji, unique every time. Never repeat a phrase you've used before. Be genuinely different each time.`,
+              },
+              {
+                role: "user",
+                content: `Here's an example of your style: "${seed}"\nGenerate a completely different opener with the same energy. One sentence only. No quotes around it.`,
+              },
+            ],
+            max_tokens: 60,
+            temperature: 0.95,
+          }),
+        });
+
+        if (!res.ok) continue;
+
+        const data = await res.json();
+        const text = data.choices?.[0]?.message?.content?.trim();
+        if (text && text.length > 5) {
+          return text.replace(/^["']|["']$/g, "");
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    return seed;
+  } catch {
+    return seed;
+  }
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -26,6 +82,7 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
+    const apiKey = Deno.env.get("LOVABLE_API_KEY")!;
 
     // Read matching mode
     const { data: modeSetting } = await supabase
@@ -142,7 +199,8 @@ Deno.serve(async (req) => {
         .single();
 
       if (botProfile) {
-        const greeting = AMARA_GREETINGS[Math.floor(Math.random() * AMARA_GREETINGS.length)];
+        const seed = OPENER_SEEDS[Math.floor(Math.random() * OPENER_SEEDS.length)];
+        const greeting = await generateOpener(apiKey, seed);
 
         // Update the waiting session to be a bot session
         await supabase
@@ -158,7 +216,7 @@ Deno.serve(async (req) => {
           status: "matched",
           sessionId: session.id,
           role: "a",
-          partnerName: botProfile.username === "queen_tapestry" ? "Queen Tapestry" : botProfile.display_name ?? "Amara",
+          partnerName: botProfile.username === "queen_tapestry" ? "Queen Tapestry" : botProfile.display_name ?? "Queen Tapestry",
           isBot: true,
           initialMessages: [{ sender: "them", text: greeting, time: Date.now() }],
         }), {
