@@ -214,6 +214,7 @@ const VibeMatch = () => {
         const { data } = await supabase.functions.invoke("vibe-bot-chat", { body: { sessionId, walletAddress, text } });
         if (data?.botReply) {
           setMessages((prev) => [...prev, { time: Date.now(), sender: "them", text: data.botReply }]);
+          lastUserMessageTime.current = Date.now(); // Reset silence timer from when user sees bot's reply
         }
       } finally { setIsTyping(false); }
     } else {
