@@ -1,70 +1,55 @@
 
 
-## Fix: Input Bar Tracks Keyboard Using Absolute + Transform (WhatsApp-style)
+## Fix: Enable Visual Viewport Resizing for Keyboard Tracking
 
-### Root Cause
+### What Changes
+One single change in `index.html` — swap `interactive-widget=overlays-content` to `interactive-widget=resizes-visual`.
 
-`position: fixed; bottom: 0` on iOS Safari stays anchored to the **layout viewport**, which does NOT resize when the keyboard opens. The keyboard simply overlays on top. Our `visualViewport` listener calculates `kbHeight` correctly, but applying it as `bottom: Xpx` on a `fixed` element has no effect on iOS because the fixed reference frame hasn't changed.
+### Why This Works
+- `overlays-content` tells the browser: "keyboard overlays on top, don't resize anything" — this is why the existing `visualViewport` tracking code produces no movement
+- `resizes-visual` tells the browser: "shrink the visual viewport from the bottom when the keyboard opens"
+- The shrink happens **only from the bottom** — the top edge of the viewport stays at 0, so the header (fixed at top-0) is completely unaffected
+- Chat messages stay in place and only scroll when new messages arrive — the visible chat area just gets slightly shorter
+- The input bar's `translateY(vv.height + vv.offsetTop - 60)` finally produces a different (smaller) value when the keyboard opens, moving it up
 
-### How WhatsApp/Instagram Do It
+### What Does NOT Change
+- Header position (fixed top-0) — untouched
+- Chat message behavior — no jumping, no re-layout
+- Any existing scroll behavior — messages only scroll on new messages
+- `VibeMatch.tsx` — no code changes needed
+- `FriendChat.tsx` — no code changes needed
 
-They use `position: absolute` inside a container, and reposition the input using `transform: translateY()` based on `visualViewport.height + visualViewport.offsetTop`. This bypasses the broken `fixed + bottom` behavior entirely.
-
-### The Fix
-
-Replace the Layer 3 input bar from `position: fixed; bottom: kbHeight` to `position: absolute; top: 0; transform: translateY(calculatedTop)`.
-
-### Changes
-
-**`src/pages/VibeMatch.tsx`**
-
-1. Change the keyboard tracking `useEffect` to calculate a **top offset** instead of keyboard height:
-   - `topOffset = visualViewport.height + visualViewport.offsetTop - inputBarHeight`
-   - This gives the exact pixel position where the input should sit, right above the keyboard
-
-2. Replace Layer 3 (input bar) from:
-   ```
-   position: fixed; bottom: kbHeight
-   ```
-   to:
-   ```
-   position: fixed; top: 0; transform: translateY(topOffset)
-   ```
-   Using `top: 0` + `translateY` instead of `bottom` ensures it tracks the visual viewport correctly on iOS Safari.
-
-3. The message area (Layer 2) bottom offset will be calculated from `window.innerHeight - topOffset` to keep messages above the input.
-
-**`src/pages/FriendChat.tsx`**
-
-Same pattern applied: the input bar uses `position: fixed; top: 0; transform: translateY(calculatedTop)` instead of `bottom`.
-
-### Technical Detail
-
-```text
-BEFORE (broken on iOS):
-  Input: position: fixed; bottom: kbHeight
-  Problem: iOS fixed elements ignore keyboard resize
-
-AFTER (WhatsApp-style):
-  Input: position: fixed; top: 0; transform: translateY(vpHeight + vpOffset - barH)
-  Why it works: visualViewport.height shrinks when keyboard opens,
-                so the translateY value moves the input UP automatically
-```
-
-The key calculation:
-```typescript
-const update = () => {
-  const vv = window.visualViewport!;
-  const inputBarHeight = 60; // px, fixed known height
-  const top = vv.height + vv.offsetTop - inputBarHeight;
-  setInputTop(top);
-};
-```
-
-### Files Changed
+### File Changed
 
 | File | Change |
 |------|--------|
-| `src/pages/VibeMatch.tsx` | Replace `fixed bottom` with `fixed top-0 + translateY` for input bar; update visualViewport listener to compute top offset |
-| `src/pages/FriendChat.tsx` | Same transform-based input positioning |
+| `index.html` | In the viewport meta tag, replace `interactive-widget=overlays-content` with `interactive-widget=resizes-visual` |
+
+### Visual Explanation
+
+```text
+Keyboard closed:
+  ┌─────────────────┐ ← top (0)
+  │     HEADER      │ ← fixed top-0 (never moves)
+  ├─────────────────┤
+  │                 │
+  │   CHAT AREA     │
+  │                 │
+  ├─────────────────┤
+  │   INPUT BAR     │ ← translateY = viewport height - 60
+  └─────────────────┘ ← bottom
+
+Keyboard open (resizes-visual):
+  ┌─────────────────┐ ← top (0) — SAME
+  │     HEADER      │ ← SAME — not affected
+  ├─────────────────┤
+  │   CHAT AREA     │ ← shorter visible area, no jump
+  ├─────────────────┤
+  │   INPUT BAR     │ ← translateY = SMALLER viewport height - 60
+  ├─────────────────┤
+  │                 │
+  │    KEYBOARD     │ ← viewport shrinks from here
+  │                 │
+  └─────────────────┘
+```
 
