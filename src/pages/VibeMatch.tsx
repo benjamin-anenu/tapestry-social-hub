@@ -309,12 +309,9 @@ const VibeMatch = () => {
         </div>
 
         {/* LAYER 2: Fixed chat body — keyboard adjusts this via padding */}
-        <div
-          className="fixed top-11 left-0 right-0 bottom-0 flex flex-col bg-background grid-bg scanlines"
-          style={{ paddingBottom: kbHeight > 0 ? `${kbHeight}px` : undefined }}
-        >
+        <div className="fixed top-11 left-0 right-0 bottom-0 flex flex-col bg-background grid-bg scanlines">
           <div className="flex-1 min-h-0 overflow-hidden w-full max-w-lg lg:max-w-2xl mx-auto">
-            <ChatZone timeLeft={0} messages={messages} clueDrops={[]} onSendMessage={handleSendMessage} isTyping={isTyping} />
+            <ChatZone timeLeft={0} messages={messages} clueDrops={[]} onSendMessage={handleSendMessage} isTyping={isTyping} kbHeight={kbHeight} />
           </div>
         </div>
       </>
