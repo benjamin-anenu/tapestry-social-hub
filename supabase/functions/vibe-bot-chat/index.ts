@@ -153,9 +153,13 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Anti-hallucination instruction for regular (non-nudge) replies
-    const antiHallucinationRule = !isNudge && userMessageCount > 0
-      ? "\n\nCRITICAL RULE: Only respond to what the USER actually said in their last message. Never reference or reply to your own previous messages as if someone else said them. If you're unsure what the user said, ask them to clarify."
+    // Dynamic anti-hallucination: inject the user's exact last message
+    const lastUserMsg = [...chatLog]
+      .reverse()
+      .find((m: { sender: string; text: string }) => m.sender !== BOT_WALLET);
+
+    const antiHallucinationRule = !isNudge && lastUserMsg
+      ? `\n\nCRITICAL RULE: The user's last message was EXACTLY: "${(lastUserMsg as { text: string }).text}"\nRespond ONLY to that message. Do NOT quote, paraphrase, or reference anything YOU said in your previous messages. Do NOT attribute your own words or topics to the user. React to what THEY said, not to what YOU said.`
       : "";
 
     const aiMessages = [
