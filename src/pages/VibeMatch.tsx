@@ -259,28 +259,35 @@ const VibeMatch = () => {
     }
   }, [sessionId, walletAddress, isBot]);
 
-  // Lock body scroll and use visual viewport to ignore keyboard
+  // Use visualViewport to keep chat sized to visible area when keyboard overlays
+  const [vpHeight, setVpHeight] = useState<number | null>(null);
+
   useEffect(() => {
     if (phase !== "chatting") return;
-    const root = document.documentElement;
-    // Prevent the browser from resizing the layout when keyboard opens
-    document.body.style.overflow = "hidden";
-    document.body.style.position = "fixed";
-    document.body.style.width = "100%";
-    document.body.style.height = "100%";
-    root.style.overflow = "hidden";
+
+    const vv = window.visualViewport;
+    if (!vv) return;
+
+    const update = () => {
+      setVpHeight(vv.height);
+    };
+
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
 
     return () => {
-      document.body.style.overflow = "";
-      document.body.style.position = "";
-      document.body.style.width = "";
-      document.body.style.height = "";
-      root.style.overflow = "";
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+      setVpHeight(null);
     };
   }, [phase]);
 
   return (
-    <div className={`flex flex-col items-center bg-background grid-bg scanlines ${phase === "chatting" ? "fixed inset-0 overflow-hidden" : "h-[100dvh] overflow-hidden"}`} style={phase === "chatting" ? { height: "100%", minHeight: "100%" } : undefined}>
+    <div
+      className={`flex flex-col items-center bg-background grid-bg scanlines ${phase === "chatting" ? "fixed top-0 left-0 w-full overflow-hidden" : "h-[100dvh] overflow-hidden"}`}
+      style={phase === "chatting" ? { height: vpHeight ? `${vpHeight}px` : "100dvh" } : undefined}
+    >
       {phase !== "chatting" && (
         <div className="pointer-events-none absolute inset-0">
           <div className="absolute -top-40 left-1/2 h-[600px] w-[600px] -translate-x-1/2 rounded-full bg-primary/5 blur-[150px]" />
