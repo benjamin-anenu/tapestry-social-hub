@@ -120,7 +120,7 @@ const MainHub = () => {
         transition={{ delay: i * 0.1 }}
         onClick={() => handleNav(card)}
         disabled={card.disabled}
-        className={`group relative flex items-center gap-4 rounded-2xl border border-border/50 bg-card/80 p-5 backdrop-blur-sm transition-all ${
+        className={`group relative flex items-center gap-4 rounded-2xl border border-border/50 bg-card/80 p-5 text-left backdrop-blur-sm transition-all ${
         card.disabled ?
         "cursor-not-allowed opacity-50" :
         `hover:border-primary/30 hover:${card.glow}`}`
