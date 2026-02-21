@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { MessageCircle, Lightbulb, Send, SpellCheck } from "lucide-react";
+import { Lightbulb, Send } from "lucide-react";
 import { Input } from "@/components/ui/input";
 
 interface ChatMessage {
