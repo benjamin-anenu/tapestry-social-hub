@@ -259,34 +259,22 @@ const VibeMatch = () => {
     }
   }, [sessionId, walletAddress, isBot]);
 
-  // Use visualViewport to keep chat sized to visible area when keyboard overlays
-  const [vpHeight, setVpHeight] = useState<number | null>(null);
+  // Capture the full screen height ONCE when entering chat, lock to it
+  const [lockedHeight, setLockedHeight] = useState<number | null>(null);
 
   useEffect(() => {
-    if (phase !== "chatting") return;
-
-    const vv = window.visualViewport;
-    if (!vv) return;
-
-    const update = () => {
-      setVpHeight(vv.height);
-    };
-
-    update();
-    vv.addEventListener("resize", update);
-    vv.addEventListener("scroll", update);
-
-    return () => {
-      vv.removeEventListener("resize", update);
-      vv.removeEventListener("scroll", update);
-      setVpHeight(null);
-    };
+    if (phase !== "chatting") {
+      setLockedHeight(null);
+      return;
+    }
+    // Capture height immediately before keyboard can open
+    setLockedHeight(window.innerHeight);
   }, [phase]);
 
   return (
     <div
-      className={`flex flex-col items-center bg-background grid-bg scanlines ${phase === "chatting" ? "fixed top-0 left-0 w-full overflow-hidden" : "h-[100dvh] overflow-hidden"}`}
-      style={phase === "chatting" ? { height: vpHeight ? `${vpHeight}px` : "100dvh" } : undefined}
+      className={`flex flex-col bg-background grid-bg scanlines ${phase === "chatting" ? "fixed top-0 left-0 w-full overflow-hidden" : "h-[100dvh] overflow-hidden items-center"}`}
+      style={phase === "chatting" && lockedHeight ? { height: `${lockedHeight}px` } : undefined}
     >
       {phase !== "chatting" && (
         <div className="pointer-events-none absolute inset-0">
