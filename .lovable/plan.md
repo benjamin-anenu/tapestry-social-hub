@@ -1,68 +1,67 @@
 
 
-## Fix: Queen Tapestry Replying to Herself
+## Fix: Bot Still Attributing Its Own Words to the User
 
-### Root Cause (Confirmed from Live Data)
+### What Is Happening
 
-Session `41b7dfcc` shows the exact problem:
-
-```
-BOT:  "Drop the coordinate of the last place that actually made you feel something."
-BOT:  "A hidden rooftop in Lisbon where the Fado music felt like a cheat code..."  
-BOT:  "That Lisbon vibe sounds heavenly — serious main character energy..."
-USER: "i cant say oh, not my thingy lol"
-BOT:  "A jazz bar in Ginza? You definitely have taste..."
-USER: "i didnt say this"
-```
-
-The bot is answering its own questions. The user never mentioned Lisbon or Ginza — the bot hallucinated both sides of the conversation.
-
-### Why This Happens
-
-When a nudge fires and there are **zero user messages** in the `chat_log`, the AI sees:
+Session `dbd6cc72` proves the current anti-hallucination rule is not strong enough:
 
 ```
-system: [prompt] + "They haven't replied. Try a different angle..."
-assistant: "Drop the coordinate of the last place..."
+BOT:  "...before I decide if we can even sit at the same table."
+USER: "😂"
+BOT:  "Bold move setting the table rules already, I like that energy..."
 ```
 
-There is no `user` role message. Large language models are trained to continue conversations — so the AI generates what a user MIGHT say and then responds to it. The current nudge instruction ("try a different angle") does not prevent this because the AI treats "different angle" as "continue the conversation from both sides."
+The bot grabbed its own phrase ("the table") and told the user THEY made a "bold move setting the table" -- but the user only sent a laughing emoji. The bot is weaving its own previous words into the reply and attributing them to the user.
 
-Even when the user HAS replied, the bot sometimes picks up its own previous messages and responds to THOSE instead of the user's actual words (the "jazz bar in Ginza" issue — bot referenced its own Lisbon message, not the user's "i cant say oh").
+### Why the Current Fix Is Not Enough
 
-### The Fix — Two Changes
+The current instruction says: "Only respond to what the USER actually said in their last message." But AI models interpret this loosely -- they see the full conversation context and naturally reference earlier messages. The bot thinks it is "responding to the emoji in context," but it is actually projecting its own words onto the user.
 
-**1. `supabase/functions/vibe-bot-chat/index.ts` — Server-side guard + stronger nudge instructions**
+### The Stronger Fix
 
-A) Add a server-side check: count how many REAL user messages exist in the chat log (messages where sender is NOT `BOT_AMARA_001`). If zero user messages exist and `consecutiveBotMessages >= 2`, silently refuse the nudge. The bot should not send more than 2 messages without ANY user reply.
+In `supabase/functions/vibe-bot-chat/index.ts`, replace the generic anti-hallucination rule with a **dynamic instruction that explicitly states what the user's last message was**:
 
-B) Rewrite the nudge instructions to be explicit about self-reply prevention:
+```
+CRITICAL RULE: The user's last message was EXACTLY: "😂"
+Respond ONLY to that message. Do NOT quote, paraphrase, or reference
+anything YOU said in your previous messages. Do NOT attribute your own
+words or topics to the user. The user said "😂" and nothing else —
+react to THAT, not to your own previous message.
+```
 
-- When `consecutiveBotMessages <= 1` (bot sent opener, user silent):
-  ```
-  [SYSTEM: The other person has NOT replied at all yet. You must send a SHORT follow-up 
-  to get them talking. CRITICAL RULES: Do NOT answer your own question. Do NOT simulate 
-  what they might say. Do NOT reference anything they haven't actually said. Just send 
-  a brief, casual nudge like "you there?" or a new simple question. One sentence max.]
-  ```
+This is built dynamically by extracting the last user message from the chat log and injecting it literally into the system prompt. The AI can no longer "interpret" what the user said because the system prompt tells it exactly what was said.
 
-- When `consecutiveBotMessages >= 2` (bot sent opener + one nudge, still no reply):
-  ```
-  [SYSTEM: They still haven't replied after two messages. Send ONE final very short 
-  message — like "guess you're busy" or "aight, no pressure". Do NOT continue the 
-  conversation with yourself. Do NOT answer your own questions. One short sentence only.]
-  ```
+### Technical Details
 
-C) Also add an instruction to the NON-nudge path (regular replies): append a rule that says "Only respond to what the USER actually said in their last message. Never reference or reply to your own previous messages as if someone else said them."
+**File: `supabase/functions/vibe-bot-chat/index.ts`**
 
-**2. `supabase/functions/vibe-bot-chat/index.ts` — Hard cap on consecutive bot messages**
+1. Find the last user message in the chat log (last entry where sender is not `BOT_AMARA_001`)
+2. Replace the static `antiHallucinationRule` with a dynamic one that includes the actual user text:
 
-Change the existing `maxNudges` guard: if `consecutiveBotMessages >= 2` and there are ZERO user messages in the entire chat log, return silenced. The bot should never send more than 2 unanswered messages total (opener + 1 nudge) before the user has spoken even once.
+```typescript
+// Extract the user's actual last message
+const lastUserMsg = [...chatLog]
+  .reverse()
+  .find((m) => m.sender !== BOT_WALLET);
+
+const antiHallucinationRule = !isNudge && lastUserMsg
+  ? `\n\nCRITICAL RULE: The user's last message was EXACTLY: "${lastUserMsg.text}"\nRespond ONLY to that message. Do NOT quote, paraphrase, or reference anything YOU said in your previous messages. Do NOT attribute your own words or topics to the user. React to what THEY said, not to what YOU said.`
+  : "";
+```
+
+### What This Changes
+
+| Before | After |
+|--------|-------|
+| Generic "only respond to user's last message" | System prompt tells the AI exactly what the user said, word-for-word |
+| Bot could still "interpret" the emoji in context of its own words | Bot is explicitly told the user said "😂" and nothing else |
+| Bot attributed "setting the table" to the user | Bot will react to the emoji itself without echoing its own phrases |
 
 ### Files Changed
 
 | File | Change |
 |------|--------|
-| `supabase/functions/vibe-bot-chat/index.ts` | Stronger nudge instructions with explicit anti-self-reply rules; hard cap of 2 consecutive bot messages when user has never replied; anti-hallucination instruction on regular replies |
+| `supabase/functions/vibe-bot-chat/index.ts` | Replace static anti-hallucination rule with dynamic one that injects the user's exact last message into the system prompt |
 
-No changes to `VibeMatch.tsx`. No schema changes. No new functions.
+No other files change. No schema changes.
