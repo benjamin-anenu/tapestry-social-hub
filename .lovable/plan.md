@@ -1,84 +1,40 @@
 
 
-## Restructure: Fully Detached Header + Two-Layer Layout
+## Fix: Input Field Repositions Above Keyboard
 
-### Why Previous Attempts Failed
+### What's Happening Now
+The header fix works perfectly. But the keyboard height padding (`kbHeight`) is applied to the **outer container**, while the input lives **inside** the ChatZone card. The padding adds empty space below the card instead of pushing the input up above the keyboard.
 
-The header and chat body are currently inside the same `div`. When the mobile keyboard opens, the browser resizes the entire container (including the header) as one unit. No amount of `sticky`, `lockedHeight`, or `overflow: hidden` can stop this because the browser treats the whole container as a single resizable surface.
-
-### The Fix: Two Independent Fixed Layers
-
-Split the chat screen into **two completely separate fixed-position elements** so the browser literally cannot move the header when resizing for the keyboard.
-
-```text
-+----------------------------------+
-| FIXED LAYER 1: Header (z-50)    |  <-- position: fixed; top: 0
-| "Vibing with Queen Tapestry 52s" |      Never moves. Ever.
-+----------------------------------+
-| FIXED LAYER 2: Chat body         |  <-- position: fixed; top: headerH
-|                                  |      This is what resizes
-|   [scrollable messages]          |
-|                                  |
-|   [input bar at bottom]          |
-+----------------------------------+
-| KEYBOARD (browser-controlled)    |  <-- overlaps layer 2 from bottom
-+----------------------------------+
-```
-
-The header is a **sibling** of the chat body, not a child. The keyboard can only affect the viewport below the header.
+### The Fix
+Pass the keyboard height (`kbHeight`) into ChatZone as a prop, and apply it as `padding-bottom` directly on the **input area** inside ChatZone. This way the input bar will always sit right above the keyboard.
 
 ### Changes
 
-**1. `index.html`** -- Re-add `interactive-widget=overlays-content` to viewport meta. This tells modern browsers to overlay the keyboard instead of resizing the layout. Combined with the structural fix, this covers both old and new browser behavior.
+**1. `src/components/demo/ChatZone.tsx`**
+- Add a new `kbHeight` prop (number, defaults to 0)
+- Apply `paddingBottom: kbHeight` to the input area container (the `border-t` div at the bottom)
+- Also add `env(safe-area-inset-bottom)` fallback for devices with home indicators
 
-**2. `src/pages/VibeMatch.tsx`** (chatting phase only)
-- Remove `lockedHeight` state and its `useEffect`
-- During chatting phase, render **two sibling fixed divs** instead of one wrapper:
-  - Header: `fixed top-0 left-0 right-0 z-50 h-11` (timer bar)
-  - Body: `fixed top-11 left-0 right-0 bottom-0` (ChatZone)
-- Add `visualViewport` listener that tracks keyboard height and applies `padding-bottom` to the body container so the input stays visible above the keyboard
+**2. `src/pages/VibeMatch.tsx`**
+- Remove `paddingBottom` from the outer fixed Layer 2 container
+- Pass `kbHeight={kbHeight}` as a prop to ChatZone
 
-**3. `src/components/demo/ChatZone.tsx`**
-- Remove the internal "COMMS" sticky header (it's now redundant since the parent provides the fixed header)
-- The component becomes just: messages scroll area + input bar
-- No structural changes to the input area itself
+**3. `src/pages/FriendChat.tsx`**
+- No changes needed — it already handles keyboard padding on its own input bar correctly
 
-**4. `src/pages/FriendChat.tsx`** (Circle Chat)
-- Same two-layer split: header becomes `fixed top-0 z-50`, chat body becomes `fixed top-[header] bottom-0`
-- Add the same `visualViewport` listener for keyboard-aware padding
+### Technical Detail
 
-### Technical Details
+```text
+BEFORE (broken):
+  [Fixed Layer 2 div padding-bottom: kbHeight]
+    [ChatZone card h-full]
+      [messages scroll]
+      [input bar]        <-- hidden behind keyboard
+    [empty space from padding]
 
-The `visualViewport` listener adjusts the body's bottom padding:
-
-```typescript
-useEffect(() => {
-  const vv = window.visualViewport;
-  if (!vv) return;
-  const update = () => {
-    const kbHeight = window.innerHeight - vv.height;
-    document.documentElement.style.setProperty(
-      '--kb-height', `${Math.max(0, kbHeight)}px`
-    );
-  };
-  vv.addEventListener('resize', update);
-  vv.addEventListener('scroll', update);
-  return () => {
-    vv.removeEventListener('resize', update);
-    vv.removeEventListener('scroll', update);
-    document.documentElement.style.removeProperty('--kb-height');
-  };
-}, []);
+AFTER (fixed):
+  [Fixed Layer 2 div — no extra padding]
+    [ChatZone card h-full]
+      [messages scroll]
+      [input bar padding-bottom: kbHeight]  <-- sits above keyboard
 ```
-
-The input container uses `padding-bottom: var(--kb-height, 0px)` to stay above the keyboard.
-
-### Files Changed
-
-| File | Change |
-|------|--------|
-| `index.html` | Add `interactive-widget=overlays-content` to viewport meta |
-| `src/pages/VibeMatch.tsx` | Split chatting phase into two fixed layers; add visualViewport listener; remove lockedHeight |
-| `src/components/demo/ChatZone.tsx` | Remove internal COMMS header (now provided by parent) |
-| `src/pages/FriendChat.tsx` | Split into two fixed layers; add visualViewport listener |
-
