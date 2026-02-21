@@ -114,7 +114,7 @@ Deno.serve(async (req) => {
         .eq("id", sessionId);
     }
 
-    // Anti-hallucination: Check consecutive bot messages
+    // Count consecutive bot messages from the end
     let consecutiveBotMessages = 0;
     for (let i = chatLog.length - 1; i >= 0; i--) {
       if ((chatLog[i] as { sender: string }).sender === BOT_WALLET) {
@@ -124,24 +124,42 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Count total real user messages (not bot)
+    const userMessageCount = chatLog.filter(
+      (m: { sender: string }) => m.sender !== BOT_WALLET
+    ).length;
+
+    // Hard cap: if zero user messages and bot already sent 2+, silence
+    if (isNudge && userMessageCount === 0 && consecutiveBotMessages >= 2) {
+      return new Response(JSON.stringify({ ok: true, botReply: null, silenced: true }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Standard nudge cap
     if (isNudge && consecutiveBotMessages >= maxNudges) {
       return new Response(JSON.stringify({ ok: true, botReply: null, silenced: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Build nudge instruction
+    // Build nudge instruction with explicit anti-self-reply rules
     let nudgeInstruction = "";
     if (isNudge) {
       if (consecutiveBotMessages <= 1) {
-        nudgeInstruction = "\n\n[SYSTEM: They haven't replied to your last message yet. Try a different angle — ask something new, switch topics, or say something that genuinely invites a response. One sentence only. Do NOT re-introduce yourself.]";
+        nudgeInstruction = "\n\n[SYSTEM: The other person has NOT replied at all yet. You must send a SHORT follow-up to get them talking. CRITICAL RULES: Do NOT answer your own question. Do NOT simulate what they might say. Do NOT reference anything they haven't actually said. Just send a brief, casual nudge like \"you there?\" or a new simple question. One sentence max.]";
       } else {
-        nudgeInstruction = "\n\n[SYSTEM: They still haven't replied. Send ONE final brief message — something a real person would send when someone's gone quiet. Very short, casual, natural. After this, you'll go quiet too.]";
+        nudgeInstruction = "\n\n[SYSTEM: They still haven't replied after two messages. Send ONE final very short message — like \"guess you're busy\" or \"aight, no pressure\". Do NOT continue the conversation with yourself. Do NOT answer your own questions. One short sentence only.]";
       }
     }
 
+    // Anti-hallucination instruction for regular (non-nudge) replies
+    const antiHallucinationRule = !isNudge && userMessageCount > 0
+      ? "\n\nCRITICAL RULE: Only respond to what the USER actually said in their last message. Never reference or reply to your own previous messages as if someone else said them. If you're unsure what the user said, ask them to clarify."
+      : "";
+
     const aiMessages = [
-      { role: "system", content: botPrompt + nudgeInstruction },
+      { role: "system", content: botPrompt + nudgeInstruction + antiHallucinationRule },
       ...chatLog.map((m: { sender: string; text: string }) => ({
         role: m.sender === BOT_WALLET ? "assistant" : "user",
         content: m.text,
