@@ -22,6 +22,7 @@ interface ChatZoneProps {
   onSendMessage?: (text: string) => void;
   disabled?: boolean;
   isTyping?: boolean;
+  kbHeight?: number;
 }
 
 const QUICK_EMOJIS = ["🔥", "😂", "😍", "👍", "💯"];
@@ -96,7 +97,7 @@ function getCorrection(word: string): string | null {
   return null;
 }
 
-const ChatZone = ({ timeLeft, messages, clueDrops, onSendMessage, disabled, isTyping }: ChatZoneProps) => {
+const ChatZone = ({ timeLeft, messages, clueDrops, onSendMessage, disabled, isTyping, kbHeight = 0 }: ChatZoneProps) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [inputValue, setInputValue] = useState("");
   const [autoCorrectEnabled, setAutoCorrectEnabled] = useState(true);
@@ -255,7 +256,7 @@ const ChatZone = ({ timeLeft, messages, clueDrops, onSendMessage, disabled, isTy
 
       {/* Chat input area */}
       {onSendMessage && (
-        <div className="border-t border-border/50 p-3 shrink-0 space-y-2">
+        <div className="border-t border-border/50 p-3 shrink-0 space-y-2" style={{ paddingBottom: kbHeight > 0 ? `${kbHeight}px` : `max(12px, env(safe-area-inset-bottom))` }}>
           {/* Predictive suggestions */}
           {suggestions.length > 0 && (
             <div className="flex gap-1.5 overflow-x-auto pb-1">
