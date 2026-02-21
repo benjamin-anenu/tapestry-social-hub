@@ -259,8 +259,28 @@ const VibeMatch = () => {
     }
   }, [sessionId, walletAddress, isBot]);
 
+  // Lock body scroll and use visual viewport to ignore keyboard
+  useEffect(() => {
+    if (phase !== "chatting") return;
+    const root = document.documentElement;
+    // Prevent the browser from resizing the layout when keyboard opens
+    document.body.style.overflow = "hidden";
+    document.body.style.position = "fixed";
+    document.body.style.width = "100%";
+    document.body.style.height = "100%";
+    root.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = "";
+      document.body.style.position = "";
+      document.body.style.width = "";
+      document.body.style.height = "";
+      root.style.overflow = "";
+    };
+  }, [phase]);
+
   return (
-    <div className={`flex flex-col items-center bg-background grid-bg scanlines ${phase === "chatting" ? "fixed inset-0 overflow-hidden" : "h-[100dvh] overflow-hidden"}`}>
+    <div className={`flex flex-col items-center bg-background grid-bg scanlines ${phase === "chatting" ? "fixed inset-0 overflow-hidden" : "h-[100dvh] overflow-hidden"}`} style={phase === "chatting" ? { height: "100%", minHeight: "100%" } : undefined}>
       {phase !== "chatting" && (
         <div className="pointer-events-none absolute inset-0">
           <div className="absolute -top-40 left-1/2 h-[600px] w-[600px] -translate-x-1/2 rounded-full bg-primary/5 blur-[150px]" />
