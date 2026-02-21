@@ -259,30 +259,76 @@ const VibeMatch = () => {
     }
   }, [sessionId, walletAddress, isBot]);
 
-  // Capture the full screen height ONCE when entering chat, lock to it
-  const [lockedHeight, setLockedHeight] = useState<number | null>(null);
+  // === KEYBOARD-AWARE LAYOUT via visualViewport ===
+  const [kbHeight, setKbHeight] = useState(0);
 
   useEffect(() => {
     if (phase !== "chatting") {
-      setLockedHeight(null);
+      setKbHeight(0);
       return;
     }
-    // Capture height immediately before keyboard can open
-    setLockedHeight(window.innerHeight);
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const update = () => {
+      const kb = window.innerHeight - vv.height;
+      setKbHeight(Math.max(0, kb));
+    };
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    update();
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+    };
   }, [phase]);
 
-  return (
-    <div
-      className={`flex flex-col bg-background grid-bg scanlines ${phase === "chatting" ? "fixed top-0 left-0 w-full overflow-hidden" : "h-[100dvh] overflow-hidden items-center"}`}
-      style={phase === "chatting" && lockedHeight ? { height: `${lockedHeight}px` } : undefined}
-    >
-      {phase !== "chatting" && (
-        <div className="pointer-events-none absolute inset-0">
-          <div className="absolute -top-40 left-1/2 h-[600px] w-[600px] -translate-x-1/2 rounded-full bg-primary/5 blur-[150px]" />
-        </div>
-      )}
+  // Lock body scroll during chat
+  useEffect(() => {
+    if (phase === "chatting") {
+      document.documentElement.style.overflow = "hidden";
+      document.body.style.overflow = "hidden";
+      return () => {
+        document.documentElement.style.overflow = "";
+        document.body.style.overflow = "";
+      };
+    }
+  }, [phase]);
 
-      <div className={`relative z-10 flex w-full max-w-lg lg:max-w-2xl flex-1 flex-col min-h-0 ${phase === "chatting" ? "h-full px-0 py-0 gap-0 mx-auto" : "items-center justify-center gap-4 px-4 py-4"}`}>
+  // === CHATTING: Two independent fixed layers ===
+  if (phase === "chatting") {
+    return (
+      <>
+        {/* LAYER 1: Fixed header — never moves */}
+        <div className="fixed top-0 left-0 right-0 z-50 flex items-center gap-3 border-b border-border/30 bg-card/90 backdrop-blur-sm px-3 py-2 h-11">
+          <p className="font-mono text-[10px] text-muted-foreground truncate">
+            Vibing with <span className="text-primary font-bold">{partnerName}</span>
+          </p>
+          <div className="flex-1 min-w-0">
+            <GameTimer duration={60} speed={1000} onTick={setTimeLeft} onComplete={handleTimerComplete} />
+          </div>
+        </div>
+
+        {/* LAYER 2: Fixed chat body — keyboard adjusts this via padding */}
+        <div
+          className="fixed top-11 left-0 right-0 bottom-0 flex flex-col bg-background grid-bg scanlines"
+          style={{ paddingBottom: kbHeight > 0 ? `${kbHeight}px` : undefined }}
+        >
+          <div className="flex-1 min-h-0 overflow-hidden w-full max-w-lg lg:max-w-2xl mx-auto">
+            <ChatZone timeLeft={0} messages={messages} clueDrops={[]} onSendMessage={handleSendMessage} isTyping={isTyping} />
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // === ALL OTHER PHASES: Normal layout ===
+  return (
+    <div className="flex flex-col bg-background grid-bg scanlines h-[100dvh] overflow-hidden items-center">
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute -top-40 left-1/2 h-[600px] w-[600px] -translate-x-1/2 rounded-full bg-primary/5 blur-[150px]" />
+      </div>
+
+      <div className="relative z-10 flex w-full max-w-lg lg:max-w-2xl flex-1 flex-col min-h-0 items-center justify-center gap-4 px-4 py-4">
         <AnimatePresence mode="wait">
           {/* SEARCHING */}
           {phase === "searching" && !error && (
@@ -308,24 +354,6 @@ const VibeMatch = () => {
           {phase === "countdown" && chatStartsAt && (
             <motion.div key="countdown" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
               <MatchCountdown chatStartsAt={chatStartsAt} partnerName={partnerName} onComplete={handleCountdownComplete} />
-            </motion.div>
-          )}
-
-          {/* CHATTING */}
-          {phase === "chatting" && (
-            <motion.div key="chat" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex w-full flex-1 flex-col min-h-0 h-full">
-              {/* Fixed timer bar at top */}
-              <div className="sticky top-0 shrink-0 z-20 flex items-center gap-3 border-b border-border/30 bg-card/90 backdrop-blur-sm px-3 py-2">
-                <p className="font-mono text-[10px] text-muted-foreground truncate">
-                  Vibing with <span className="text-primary font-bold">{partnerName}</span>
-                </p>
-                <div className="flex-1 min-w-0">
-                  <GameTimer duration={60} speed={1000} onTick={setTimeLeft} onComplete={handleTimerComplete} />
-                </div>
-              </div>
-              <div className="flex-1 min-h-0 overflow-hidden">
-                <ChatZone timeLeft={0} messages={messages} clueDrops={[]} onSendMessage={handleSendMessage} isTyping={isTyping} />
-              </div>
             </motion.div>
           )}
 
@@ -412,7 +440,6 @@ const VibeMatch = () => {
             </motion.div>
           )}
         </AnimatePresence>
-
       </div>
     </div>
   );

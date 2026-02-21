@@ -67,6 +67,7 @@ const FriendChat = () => {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [friendIsTyping, setFriendIsTyping] = useState(false);
+  const [kbHeight, setKbHeight] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -74,6 +75,33 @@ const FriendChat = () => {
     setTimeout(() => {
       scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
     }, 50);
+  }, []);
+
+  // === KEYBOARD-AWARE LAYOUT via visualViewport ===
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const update = () => {
+      const kb = window.innerHeight - vv.height;
+      setKbHeight(Math.max(0, kb));
+    };
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    update();
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+    };
+  }, []);
+
+  // Lock body scroll
+  useEffect(() => {
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.documentElement.style.overflow = "";
+      document.body.style.overflow = "";
+    };
   }, []);
 
   // Load friend profile + conversation + vibe history
@@ -272,9 +300,9 @@ const FriendChat = () => {
   }
 
   return (
-    <div className="flex h-[100dvh] flex-col bg-background">
-      {/* Header */}
-      <div className="flex items-center gap-3 border-b border-border/50 bg-card/80 px-4 py-3 backdrop-blur-sm">
+    <>
+      {/* LAYER 1: Fixed header — never moves */}
+      <div className="fixed top-0 left-0 right-0 z-50 flex items-center gap-3 border-b border-border/50 bg-card/80 px-4 py-3 backdrop-blur-sm h-14">
         <Button variant="ghost" size="icon" onClick={() => navigate("/play/friends")} className="shrink-0">
           <ArrowLeft className="h-5 w-5" />
         </Button>
@@ -295,88 +323,93 @@ const FriendChat = () => {
         </Button>
       </div>
 
-      {/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-2">
-        {messages.length > 0 && messages[0]?.isVibeHistory && (
-          <div className="flex items-center gap-2 py-2">
-            <div className="h-px flex-1 bg-border/50" />
-            <span className="font-mono text-[9px] tracking-widest text-muted-foreground/60">VIBE MATCH HISTORY</span>
-            <div className="h-px flex-1 bg-border/50" />
-          </div>
-        )}
+      {/* LAYER 2: Fixed chat body — keyboard adjusts via padding */}
+      <div
+        className="fixed top-14 left-0 right-0 bottom-0 flex flex-col bg-background"
+        style={{ paddingBottom: kbHeight > 0 ? `${kbHeight}px` : undefined }}
+      >
+        {/* Messages */}
+        <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-2">
+          {messages.length > 0 && messages[0]?.isVibeHistory && (
+            <div className="flex items-center gap-2 py-2">
+              <div className="h-px flex-1 bg-border/50" />
+              <span className="font-mono text-[9px] tracking-widest text-muted-foreground/60">VIBE MATCH HISTORY</span>
+              <div className="h-px flex-1 bg-border/50" />
+            </div>
+          )}
 
-        <AnimatePresence>
-          {messages.map((msg, i) => {
-            // Show separator between vibe history and DMs
-            const showDmSeparator =
-              msg.isVibeHistory !== true &&
-              i > 0 &&
-              messages[i - 1]?.isVibeHistory === true;
+          <AnimatePresence>
+            {messages.map((msg, i) => {
+              // Show separator between vibe history and DMs
+              const showDmSeparator =
+                msg.isVibeHistory !== true &&
+                i > 0 &&
+                messages[i - 1]?.isVibeHistory === true;
 
-            return (
-              <div key={msg.id}>
-                {showDmSeparator && (
-                  <div className="flex items-center gap-2 py-3">
-                    <div className="h-px flex-1 bg-primary/20" />
-                    <span className="font-mono text-[9px] tracking-widest text-primary/50">DIRECT MESSAGES</span>
-                    <div className="h-px flex-1 bg-primary/20" />
-                  </div>
-                )}
-                <motion.div
-                  initial={{ opacity: 0, y: 4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className={`flex ${msg.isMe ? "justify-end" : "justify-start"}`}
-                >
-                  <div
-                    className={`max-w-[80%] rounded-2xl px-3.5 py-2 font-mono text-xs leading-relaxed ${
-                      msg.isVibeHistory
-                        ? msg.isMe
-                          ? "bg-primary/10 text-primary/70 border border-primary/10"
-                          : "bg-muted/30 text-muted-foreground/70 border border-border/30"
-                        : msg.isMe
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-card text-foreground border border-border/50"
-                    }`}
+              return (
+                <div key={msg.id}>
+                  {showDmSeparator && (
+                    <div className="flex items-center gap-2 py-3">
+                      <div className="h-px flex-1 bg-primary/20" />
+                      <span className="font-mono text-[9px] tracking-widest text-primary/50">DIRECT MESSAGES</span>
+                      <div className="h-px flex-1 bg-primary/20" />
+                    </div>
+                  )}
+                  <motion.div
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className={`flex ${msg.isMe ? "justify-end" : "justify-start"}`}
                   >
-                    {msg.text}
-                  </div>
-                </motion.div>
-              </div>
-            );
-          })}
-        </AnimatePresence>
+                    <div
+                      className={`max-w-[80%] rounded-2xl px-3.5 py-2 font-mono text-xs leading-relaxed ${
+                        msg.isVibeHistory
+                          ? msg.isMe
+                            ? "bg-primary/10 text-primary/70 border border-primary/10"
+                            : "bg-muted/30 text-muted-foreground/70 border border-border/30"
+                          : msg.isMe
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-card text-foreground border border-border/50"
+                      }`}
+                    >
+                      {msg.text}
+                    </div>
+                  </motion.div>
+                </div>
+              );
+            })}
+          </AnimatePresence>
 
-        {/* Typing indicators */}
-        <AnimatePresence>
-          {friendIsTyping && <TypingIndicator key="friend-typing" />}
-        </AnimatePresence>
+          {/* Typing indicators */}
+          <AnimatePresence>
+            {friendIsTyping && <TypingIndicator key="friend-typing" />}
+          </AnimatePresence>
 
-        {messages.length === 0 && !friendIsTyping && (
-          <p className="py-12 text-center font-mono text-[11px] italic text-muted-foreground/50">
-            Say something to keep the vibe going...
+          {messages.length === 0 && !friendIsTyping && (
+            <p className="py-12 text-center font-mono text-[11px] italic text-muted-foreground/50">
+              Say something to keep the vibe going...
+            </p>
+          )}
+        </div>
 
-          </p>
-        )}
-      </div>
-
-      {/* Input */}
-      <div className="border-t border-border/50 bg-card/50 px-3 pt-3 backdrop-blur-sm" style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}>
-        <div className="flex gap-2">
-          <Input
-            value={inputValue}
-            onChange={handleInputChange}
-            onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-            placeholder="Type a message..."
-            maxLength={500}
-            className="h-10 flex-1 rounded-full border-border/30 bg-background/50 px-4 font-mono text-xs"
-          />
-          <button
-            onClick={handleSend}
-            disabled={sending || !inputValue.trim()}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-opacity disabled:opacity-30"
-          >
-            <Send className="h-4 w-4" />
-          </button>
+        {/* Input */}
+        <div className="border-t border-border/50 bg-card/50 px-3 pt-3 backdrop-blur-sm" style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}>
+          <div className="flex gap-2">
+            <Input
+              value={inputValue}
+              onChange={handleInputChange}
+              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+              placeholder="Type a message..."
+              maxLength={500}
+              className="h-10 flex-1 rounded-full border-border/30 bg-background/50 px-4 font-mono text-base"
+            />
+            <button
+              onClick={handleSend}
+              disabled={sending || !inputValue.trim()}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-opacity disabled:opacity-30"
+            >
+              <Send className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -438,7 +471,7 @@ const FriendChat = () => {
           </div>
         </DrawerContent>
       </Drawer>
-    </div>
+    </>
   );
 };
 

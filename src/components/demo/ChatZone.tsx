@@ -197,24 +197,6 @@ const ChatZone = ({ timeLeft, messages, clueDrops, onSendMessage, disabled, isTy
 
   return (
     <div className="flex h-full flex-col rounded-xl border border-border/50 bg-card/80 backdrop-blur-sm overflow-hidden">
-      <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-border/50 px-4 py-3 bg-card/80 backdrop-blur-sm">
-        <div className="flex items-center gap-2">
-          <MessageCircle className="h-3.5 w-3.5 text-primary" />
-          <span className="font-mono text-[9px] tracking-widest text-primary">COMMS</span>
-        </div>
-        <button
-          onClick={() => setAutoCorrectEnabled(!autoCorrectEnabled)}
-          className={`flex items-center gap-1 rounded-full px-2 py-0.5 font-mono text-[9px] transition-colors ${
-            autoCorrectEnabled
-              ? "bg-primary/10 text-primary"
-              : "bg-muted text-muted-foreground"
-          }`}
-          title={autoCorrectEnabled ? "Auto-correct ON" : "Auto-correct OFF"}
-        >
-          <SpellCheck className="h-3 w-3" />
-          <span>ABC</span>
-        </button>
-      </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-2">
         <AnimatePresence>
