@@ -197,7 +197,7 @@ const ChatZone = ({ timeLeft, messages, clueDrops, onSendMessage, disabled, isTy
 
   return (
     <div className="flex h-full flex-col rounded-xl border border-border/50 bg-card/80 backdrop-blur-sm">
-      <div className="flex items-center justify-between gap-2 border-b border-border/50 px-4 py-3">
+      <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-border/50 px-4 py-3 bg-card/80 backdrop-blur-sm">
         <div className="flex items-center gap-2">
           <MessageCircle className="h-3.5 w-3.5 text-primary" />
           <span className="font-mono text-[9px] tracking-widest text-primary">COMMS</span>
