@@ -67,7 +67,8 @@ const FriendChat = () => {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [friendIsTyping, setFriendIsTyping] = useState(false);
-  const [kbHeight, setKbHeight] = useState(0);
+  const INPUT_BAR_H = 60;
+  const [inputTop, setInputTop] = useState(window.innerHeight - INPUT_BAR_H);
   const scrollRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -77,13 +78,13 @@ const FriendChat = () => {
     }, 50);
   }, []);
 
-  // === KEYBOARD-AWARE LAYOUT via visualViewport ===
+  // === KEYBOARD-AWARE LAYOUT via visualViewport (WhatsApp-style) ===
   useEffect(() => {
     const vv = window.visualViewport;
     if (!vv) return;
     const update = () => {
-      const kb = window.innerHeight - vv.height;
-      setKbHeight(Math.max(0, kb));
+      const top = vv.height + vv.offsetTop - INPUT_BAR_H;
+      setInputTop(Math.max(0, top));
     };
     vv.addEventListener("resize", update);
     vv.addEventListener("scroll", update);
@@ -323,10 +324,10 @@ const FriendChat = () => {
         </Button>
       </div>
 
-      {/* LAYER 2: Fixed chat body — keyboard adjusts via padding */}
+      {/* LAYER 2: Chat body — bottom adjusts to input bar position */}
       <div
-        className="fixed top-14 left-0 right-0 bottom-0 flex flex-col bg-background"
-        style={{ paddingBottom: kbHeight > 0 ? `${kbHeight}px` : undefined }}
+        className="fixed top-14 left-0 right-0 flex flex-col bg-background"
+        style={{ bottom: `${window.innerHeight - inputTop}px` }}
       >
         {/* Messages */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-2">
@@ -390,26 +391,29 @@ const FriendChat = () => {
             </p>
           )}
         </div>
+      </div>
 
-        {/* Input */}
-        <div className="border-t border-border/50 bg-card/50 px-3 pt-3 backdrop-blur-sm" style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}>
-          <div className="flex gap-2">
-            <Input
-              value={inputValue}
-              onChange={handleInputChange}
-              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-              placeholder="Type a message..."
-              maxLength={500}
-              className="h-10 flex-1 rounded-full border-border/30 bg-background/50 px-4 font-mono text-base"
-            />
-            <button
-              onClick={handleSend}
-              disabled={sending || !inputValue.trim()}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-opacity disabled:opacity-30"
-            >
-              <Send className="h-4 w-4" />
-            </button>
-          </div>
+      {/* LAYER 3: Input bar — tracks keyboard via translateY */}
+      <div
+        className="fixed top-0 left-0 right-0 z-50 border-t border-border/50 bg-card/50 px-3 pt-3 backdrop-blur-sm"
+        style={{ transform: `translateY(${inputTop}px)`, paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}
+      >
+        <div className="flex gap-2">
+          <Input
+            value={inputValue}
+            onChange={handleInputChange}
+            onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+            placeholder="Type a message..."
+            maxLength={500}
+            className="h-10 flex-1 rounded-full border-border/30 bg-background/50 px-4 font-mono text-base"
+          />
+          <button
+            onClick={handleSend}
+            disabled={sending || !inputValue.trim()}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-opacity disabled:opacity-30"
+          >
+            <Send className="h-4 w-4" />
+          </button>
         </div>
       </div>
 

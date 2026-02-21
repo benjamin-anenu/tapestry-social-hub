@@ -260,19 +260,20 @@ const VibeMatch = () => {
     }
   }, [sessionId, walletAddress, isBot]);
 
-  // === KEYBOARD-AWARE LAYOUT via visualViewport ===
-  const [kbHeight, setKbHeight] = useState(0);
+  // === KEYBOARD-AWARE LAYOUT via visualViewport (WhatsApp-style) ===
+  const INPUT_BAR_H = 60;
+  const [inputTop, setInputTop] = useState(window.innerHeight - INPUT_BAR_H);
 
   useEffect(() => {
     if (phase !== "chatting") {
-      setKbHeight(0);
+      setInputTop(window.innerHeight - INPUT_BAR_H);
       return;
     }
     const vv = window.visualViewport;
     if (!vv) return;
     const update = () => {
-      const kb = window.innerHeight - vv.height;
-      setKbHeight(Math.max(0, kb));
+      const top = vv.height + vv.offsetTop - INPUT_BAR_H;
+      setInputTop(Math.max(0, top));
     };
     vv.addEventListener("resize", update);
     vv.addEventListener("scroll", update);
@@ -326,16 +327,16 @@ const VibeMatch = () => {
         </div>
 
         {/* LAYER 2: Scrollable chat messages — no input here */}
-        <div className="fixed top-11 left-0 right-0 flex flex-col bg-background grid-bg scanlines" style={{ bottom: `${Math.max(60, 60 + kbHeight)}px` }}>
+        <div className="fixed top-11 left-0 right-0 flex flex-col bg-background grid-bg scanlines" style={{ bottom: `${window.innerHeight - inputTop}px` }}>
           <div className="flex-1 min-h-0 overflow-hidden w-full max-w-lg lg:max-w-2xl mx-auto">
             <ChatZone timeLeft={0} messages={messages} clueDrops={[]} isTyping={isTyping} />
           </div>
         </div>
 
-        {/* LAYER 3: Fixed input bar — always above keyboard */}
+        {/* LAYER 3: Input bar — tracks keyboard via translateY */}
         <div
-          className="fixed left-0 right-0 z-50 border-t border-border/30 bg-card/90 backdrop-blur-sm px-3 py-2"
-          style={{ bottom: `${kbHeight}px` }}
+          className="fixed top-0 left-0 right-0 z-50 border-t border-border/30 bg-card/90 backdrop-blur-sm px-3 py-2"
+          style={{ transform: `translateY(${inputTop}px)` }}
         >
           <div className="flex gap-2 w-full max-w-lg lg:max-w-2xl mx-auto">
             <Input
