@@ -2,8 +2,9 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Loader2, Zap, Heart } from "lucide-react";
+import { ArrowLeft, Loader2, Zap, Heart, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
 import GameTimer from "@/components/demo/GameTimer";
 import ChatZone from "@/components/demo/ChatZone";
@@ -295,6 +296,22 @@ const VibeMatch = () => {
   }, [phase]);
 
   // === CHATTING: Two independent fixed layers ===
+  const [inputValue, setInputValue] = useState("");
+
+  const handleVibeInput = () => {
+    const trimmed = inputValue.trim();
+    if (!trimmed) return;
+    handleSendMessage(trimmed);
+    setInputValue("");
+  };
+
+  const handleVibeKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleVibeInput();
+    }
+  };
+
   if (phase === "chatting") {
     return (
       <>
@@ -308,10 +325,35 @@ const VibeMatch = () => {
           </div>
         </div>
 
-        {/* LAYER 2: Fixed chat body — keyboard adjusts this via padding */}
-        <div className="fixed top-11 left-0 right-0 bottom-0 flex flex-col bg-background grid-bg scanlines">
+        {/* LAYER 2: Scrollable chat messages — no input here */}
+        <div className="fixed top-11 left-0 right-0 flex flex-col bg-background grid-bg scanlines" style={{ bottom: `${Math.max(60, 60 + kbHeight)}px` }}>
           <div className="flex-1 min-h-0 overflow-hidden w-full max-w-lg lg:max-w-2xl mx-auto">
-            <ChatZone timeLeft={0} messages={messages} clueDrops={[]} onSendMessage={handleSendMessage} isTyping={isTyping} kbHeight={kbHeight} />
+            <ChatZone timeLeft={0} messages={messages} clueDrops={[]} isTyping={isTyping} />
+          </div>
+        </div>
+
+        {/* LAYER 3: Fixed input bar — always above keyboard */}
+        <div
+          className="fixed left-0 right-0 z-50 border-t border-border/30 bg-card/90 backdrop-blur-sm px-3 py-2"
+          style={{ bottom: `${kbHeight}px` }}
+        >
+          <div className="flex gap-2 w-full max-w-lg lg:max-w-2xl mx-auto">
+            <Input
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={handleVibeKeyDown}
+              placeholder="Type a message..."
+              autoComplete="off"
+              autoCorrect="off"
+              className="h-10 flex-1 border-border/30 bg-background/50 font-mono text-base placeholder:text-muted-foreground/50"
+            />
+            <button
+              onClick={handleVibeInput}
+              disabled={!inputValue.trim()}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-opacity disabled:opacity-30 hover:opacity-90"
+            >
+              <Send className="h-4 w-4" />
+            </button>
           </div>
         </div>
       </>
