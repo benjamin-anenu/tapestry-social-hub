@@ -300,7 +300,7 @@ const VibeMatch = () => {
           {phase === "chatting" && (
             <motion.div key="chat" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex w-full flex-1 flex-col min-h-0 h-full">
               {/* Fixed timer bar at top */}
-              <div className="shrink-0 z-20 flex items-center gap-3 border-b border-border/30 bg-card/90 backdrop-blur-sm px-3 py-2">
+              <div className="sticky top-0 shrink-0 z-20 flex items-center gap-3 border-b border-border/30 bg-card/90 backdrop-blur-sm px-3 py-2">
                 <p className="font-mono text-[10px] text-muted-foreground truncate">
                   Vibing with <span className="text-primary font-bold">{partnerName}</span>
                 </p>
