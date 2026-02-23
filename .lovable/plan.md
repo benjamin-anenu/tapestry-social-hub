@@ -1,115 +1,97 @@
 
+# Plan: Professional README + UX Bug Audit
 
-## Fix: Sync Full Tapestry Identity Immediately After Wallet Connection
+## Part 1: Rewrite README.md
 
-### Problem
-When a wallet connects, profiles are created with `username: walletAddress.slice(0, 8)` and all other fields (`display_name`, `country`, `x_handle`, `instagram_handle`, `bio_text`, `tapestry_id`) remain empty. The Tapestry lookup only happens if the user navigates to the identity phase on the Play page. Users who go straight to Vibe Match or get matched before completing profile setup show up with wallet prefixes instead of real names.
+Replace the auto-generated Lovable boilerplate with a professional, developer-facing README that documents the project properly. The new README will include:
 
-### Solution
-Two complementary fixes that ensure identity data is populated as early as possible:
+### Structure
+1. **Project Title and Description** -- Vibe60: a 60-second anonymous vibe-matching social app on Solana, built for the Tapestry Hackathon
+2. **Live URL** -- https://vibe60.lovable.app
+3. **Tech Stack** -- React 18, TypeScript, Vite, Tailwind CSS, shadcn/ui, Framer Motion, Solana Wallet Adapter, Supabase (backend + edge functions), Tapestry Protocol, PWA (vite-plugin-pwa)
+4. **Features Overview** -- Wallet-based auth, 60s vibe chat (human or AI bot "Queen Tapestry"), mutual vibe reveals with on-chain Tapestry follows, friends/DM system, admin dashboard, PWA installable
+5. **Architecture** -- Frontend SPA with 15 Supabase Edge Functions handling matchmaking, chat, verdicts, identity sync, admin operations
+6. **Edge Functions Reference** -- Table listing each function and its purpose
+7. **Getting Started (Local Development)** -- Clone, install (npm/bun), set up environment variables, run dev server
+8. **Environment Variables** -- Document required `.env` vars (`VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`) and edge function secrets (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `TAPESTRY_API_KEY`, `LOVABLE_API_KEY`)
+9. **Deployment** -- Instructions for Vercel (recommended), Netlify, and Cloudflare Pages as standard hosting platforms. Note that edge functions require a Supabase project
+10. **Database** -- Mention key tables (profiles, vibe_sessions, conversations, direct_messages, admin_wallets, app_settings, games, matchmaking_queue)
+11. **Project Structure** -- Brief directory tree overview
+12. **License / Credits** -- Tapestry Hackathon, Solana
 
-**1. Enrich new profiles in `vibe-match` immediately after creation**
+### What will NOT be in the README
+- No Lovable-specific instructions or URLs
+- No "REPLACE_WITH_PROJECT_ID" placeholders
+- No mention of Lovable subscriptions or deployment via Lovable
 
-When `vibe-match/index.ts` creates a new profile (lines 115-128), it will immediately call the Tapestry wallet lookup API to fetch the real username, display_name, and tapestry_id. This covers the "first touch" scenario where a wallet has never been seen before.
+---
 
-**2. Add self-healing sync to `vibe-match-heartbeat`**
+## Part 2: UX Loopholes / Bugs Identified
 
-Since the heartbeat fires every 30 seconds on the Play page, it is the perfect place to detect and fix incomplete profiles. After updating `is_online`/`last_seen`, the heartbeat will:
-- Check if the profile has `tapestry_id IS NULL`
-- If so, call the Tapestry wallet lookup API
-- Sync `display_name`, `username`, and `tapestry_id` from Tapestry
-- This ensures any profile that slipped through without identity data gets fixed within 30 seconds
+After reviewing the codebase, here are potential issues:
 
-### What About Country, Social Links, Bio?
-These fields (`country`, `real_name`, `x_handle`, `instagram_handle`, `bio_text`) are **user-submitted** data — they are entered by the user during profile creation or via the Edit Profile sheet. They are NOT available from the Tapestry API. The existing `tapestry-identity` edge function already stores them correctly when the user submits them.
+### 1. No wallet guard on VibeMatch page (Medium severity)
+**File:** `src/pages/VibeMatch.tsx` (line 25)
+**Issue:** If a user navigates directly to `/play/vibe` without connecting a wallet, `walletAddress` is `null`. The `findMatch` effect (line 99) has a guard `if (!walletAddress) return`, so the page just shows the "searching" spinner forever with no way to connect or go back easily.
+**Fix:** Add a wallet check at the top of the component -- if no wallet is connected, redirect to `/play` or show a "Connect Wallet" prompt.
 
-The Tapestry API only provides: `username`, `bio`, `image`, `followers/following counts`, and `cross-app profiles`. So the sync will pull everything that Tapestry knows about, which is the identity fields (`username` / `display_name` / `tapestry_id`).
+### 2. No wallet guard on Friends page (Medium severity)
+**File:** `src/pages/Friends.tsx` (line 68)
+**Issue:** Same problem -- navigating to `/play/friends` without a wallet shows an empty loading state forever.
+**Fix:** Redirect to `/play` if wallet not connected.
 
-The user-submitted fields will continue to populate when the user fills them in via the Create Profile or Edit Profile forms — that flow already works correctly and stores to the database.
+### 3. VibeMatch timer starts immediately for bot matches, ignoring chat_starts_at (Low severity)
+**File:** `src/pages/VibeMatch.tsx` (lines 114-119)
+**Issue:** For bot matches, the phase jumps directly to "chatting" (skipping countdown). The 60s GameTimer starts immediately. This is intentional but worth noting -- bot matches feel instant vs. human matches which get a 3-2-1-GO countdown.
 
-### Files Changed
+### 4. Verdict double-submit protection relies on ref only (Low severity)
+**File:** `src/pages/VibeMatch.tsx` (line 237)
+**Issue:** `submittingVerdict.current` prevents double submission, but if the API call fails (line 257-259), the ref is reset to `false`, allowing a retry. This is actually correct behavior. No bug here.
 
+### 5. Session expiry race condition in vibe-match (Low severity)
+**File:** `supabase/functions/vibe-match/index.ts` (lines 99-103)
+**Issue:** `SESSION_EXPIRY_MS` is 3 minutes, but the polling interval on the client is 2.5 seconds. A waiting session could be expired server-side while the client is still polling, causing the poll to return "expired" status. This is handled correctly (line 167-168 shows "Session expired -- try again!"). No actual bug, just a slightly aggressive 3-minute timeout.
+
+### 6. Heartbeat runs on BOTH Play.tsx and VibeMatch.tsx (Low severity)
+**File:** `src/pages/Play.tsx` (lines 37-56) and `src/pages/VibeMatch.tsx` (lines 54-65)
+**Issue:** Both pages run independent 30s heartbeat intervals. When navigating from Play to VibeMatch, there's a brief overlap where two heartbeats fire. The old one cleans up via the effect return, but there's a small window of double-firing. Not a functional bug, just redundant API calls.
+
+### 7. No back button or escape during VibeMatch chatting phase (UX concern)
+**File:** `src/pages/VibeMatch.tsx` (lines 316-361)
+**Issue:** Once in the "chatting" phase, the user has no way to leave until the 60s timer expires. This is by design (preventing early exits to ensure fair matches), but there's no visible indication to the user that they must wait. If the app is buggy or the partner is unresponsive, the user is trapped for 60 seconds.
+
+### 8. Onboarding stored in localStorage only (Low severity)
+**File:** `src/hooks/useOnboarding.ts`
+**Issue:** Onboarding completion is stored in `localStorage`. Clearing browser data or using a new device forces re-onboarding. This is acceptable for a hackathon project but worth noting.
+
+---
+
+## Technical Details
+
+### Files to Change
 | File | Change |
 |------|--------|
-| `supabase/functions/vibe-match/index.ts` | After inserting a new profile (line 115-128), add Tapestry wallet lookup to sync `display_name`, `username`, `tapestry_id` |
-| `supabase/functions/vibe-match-heartbeat/index.ts` | After `is_online`/`last_seen` update, check if `tapestry_id` is null and if so, call Tapestry API to sync identity fields |
+| `README.md` | Complete rewrite with professional documentation |
+| `src/pages/VibeMatch.tsx` | Add wallet guard -- redirect to `/play` if no wallet |
+| `src/pages/Friends.tsx` | Add wallet guard -- redirect to `/play` if no wallet |
 
-### Technical Details
+### Wallet Guard Implementation
+Both `VibeMatch.tsx` and `Friends.tsx` will add an early check:
 
-**`vibe-match/index.ts` — after line 127:**
 ```typescript
-// Immediately try to sync Tapestry identity for the new profile
-try {
-  const tapestryApiKey = Deno.env.get("TAPESTRY_API_KEY");
-  if (tapestryApiKey) {
-    const res = await fetch(
-      `https://api.usetapestry.dev/api/v1/identities/${encodeURIComponent(walletAddress)}/profiles?apiKey=${tapestryApiKey}`
-    );
-    if (res.ok) {
-      const data = await res.json();
-      const profiles = data.profiles || data || [];
-      const list = Array.isArray(profiles) ? profiles : [];
-      const vibeProfile = list.find(p => {
-        const ns = typeof p.namespace === "string" ? p.namespace : p.namespace?.name;
-        return ns === "vibe" || ns === "find";
-      });
-      if (vibeProfile) {
-        const uname = vibeProfile.username || vibeProfile.id;
-        if (uname) {
-          await supabase.from("profiles").update({
-            display_name: uname,
-            username: uname,
-            tapestry_id: uname,
-          }).eq("id", newProfile.id);
-        }
-      }
-    }
-  }
-} catch (e) {
-  console.warn("Tapestry sync on create failed (non-blocking):", e);
+// At the top of the component, after wallet hooks
+if (!connected) {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background">
+      <div className="flex flex-col items-center gap-4 text-center px-6">
+        <p className="font-mono text-sm text-muted-foreground">
+          Connect your wallet first to access this page.
+        </p>
+        <Button onClick={() => navigate("/play")}>
+          Connect Wallet
+        </Button>
+      </div>
+    </div>
+  );
 }
 ```
-
-**`vibe-match-heartbeat/index.ts` — after the `is_online`/`last_seen` update:**
-```typescript
-// Self-healing: sync Tapestry identity if tapestry_id is missing
-const { data: prof } = await supabase
-  .from("profiles")
-  .select("id, tapestry_id")
-  .eq("wallet_address", walletAddress)
-  .single();
-
-if (prof && !prof.tapestry_id) {
-  try {
-    const tapestryApiKey = Deno.env.get("TAPESTRY_API_KEY");
-    if (tapestryApiKey) {
-      const res = await fetch(
-        `https://api.usetapestry.dev/api/v1/identities/${encodeURIComponent(walletAddress)}/profiles?apiKey=${tapestryApiKey}`
-      );
-      if (res.ok) {
-        const data = await res.json();
-        const profiles = data.profiles || data || [];
-        const list = Array.isArray(profiles) ? profiles : [];
-        const vibeProfile = list.find(p => {
-          const ns = typeof p.namespace === "string" ? p.namespace : p.namespace?.name;
-          return ns === "vibe" || ns === "find";
-        });
-        if (vibeProfile) {
-          const uname = vibeProfile.username || vibeProfile.id;
-          if (uname) {
-            await supabase.from("profiles").update({
-              display_name: uname,
-              username: uname,
-              tapestry_id: uname,
-            }).eq("id", prof.id);
-          }
-        }
-      }
-    }
-  } catch (e) {
-    console.warn("Heartbeat Tapestry sync failed (non-blocking):", e);
-  }
-}
-```
-
-Both syncs are non-blocking — if Tapestry is down or the wallet has no profile yet, everything continues to work with the wallet prefix as a fallback.
