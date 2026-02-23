@@ -64,7 +64,7 @@ const ConversationRow = ({ convo, onClick }: { convo: ConversationPreview; onCli
 
 const Friends = () => {
   const navigate = useNavigate();
-  const { publicKey } = useWallet();
+  const { publicKey, connected } = useWallet();
   const walletAddress = publicKey?.toBase58() ?? null;
   const [conversations, setConversations] = useState<ConversationPreview[]>([]);
   const [loading, setLoading] = useState(true);
@@ -138,6 +138,19 @@ const Friends = () => {
         (c.displayName ?? c.username ?? "").toLowerCase().includes(search.toLowerCase())
       )
     : conversations;
+
+  if (!connected) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-4 text-center px-6">
+          <p className="font-mono text-sm text-muted-foreground">
+            Connect your wallet first to access this page.
+          </p>
+          <Button onClick={() => navigate("/play")}>Connect Wallet</Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative flex min-h-screen flex-col items-center bg-background grid-bg overflow-hidden scanlines">

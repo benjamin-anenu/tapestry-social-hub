@@ -21,7 +21,7 @@ interface ChatMessage {
 
 const VibeMatch = () => {
   const navigate = useNavigate();
-  const { publicKey } = useWallet();
+  const { publicKey, connected } = useWallet();
   const walletAddress = publicKey?.toBase58() ?? null;
 
   const [phase, setPhase] = useState<Phase>("searching");
@@ -312,6 +312,19 @@ const VibeMatch = () => {
       handleVibeInput();
     }
   };
+
+  if (!connected) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-4 text-center px-6">
+          <p className="font-mono text-sm text-muted-foreground">
+            Connect your wallet first to access this page.
+          </p>
+          <Button onClick={() => navigate("/play")}>Connect Wallet</Button>
+        </div>
+      </div>
+    );
+  }
 
   if (phase === "chatting") {
     return (
