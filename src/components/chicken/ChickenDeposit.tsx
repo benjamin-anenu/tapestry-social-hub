@@ -36,7 +36,13 @@ const ChickenDeposit = ({
       const connection = new Connection("https://api.devnet.solana.com", "confirmed");
       const lamports = Math.round(stakeAmount * 1_000_000_000);
 
-      const transaction = new Transaction().add(
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+
+      const transaction = new Transaction({
+        blockhash,
+        lastValidBlockHeight,
+        feePayer: publicKey,
+      }).add(
         SystemProgram.transfer({
           fromPubkey: publicKey,
           toPubkey: new PublicKey(escrowPublicKey),
