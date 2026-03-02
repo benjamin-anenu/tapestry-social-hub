@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useWallet } from "@solana/wallet-adapter-react";
-import { ArrowLeft, Info, Send, Loader2, Lock } from "lucide-react";
+import { ArrowLeft, Info, Send, Loader2, Flame } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { motion, AnimatePresence } from "framer-motion";
@@ -469,8 +469,8 @@ const FriendChat = () => {
                 <p className="text-sm leading-relaxed text-foreground">{friend.bioText}</p>
               </div>
             )}
-            <Button disabled className="mt-4 gap-2 opacity-50">
-              <Lock className="h-3.5 w-3.5" /> Challenge — Coming Soon
+            <Button onClick={() => navigate("/play/chicken")} className="mt-4 gap-2" style={{ backgroundImage: "var(--gradient-danger)" }}>
+              <Flame className="h-3.5 w-3.5" /> Challenge to Chicken
             </Button>
           </div>
         </DrawerContent>
