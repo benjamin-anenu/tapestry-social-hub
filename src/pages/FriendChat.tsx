@@ -469,7 +469,7 @@ const FriendChat = () => {
                 <p className="text-sm leading-relaxed text-foreground">{friend.bioText}</p>
               </div>
             )}
-            <Button onClick={() => navigate("/play/chicken")} className="mt-4 gap-2" style={{ backgroundImage: "var(--gradient-danger)" }}>
+            <Button onClick={() => navigate(`/play/chicken?challenge=${friend.id}`)} className="mt-4 gap-2" style={{ backgroundImage: "var(--gradient-danger)" }}>
               <Flame className="h-3.5 w-3.5" /> Challenge to Chicken
             </Button>
           </div>

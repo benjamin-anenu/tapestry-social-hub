@@ -48,6 +48,7 @@ export type Database = {
         Row: {
           cashed_out_at: number | null
           cashed_out_by: string | null
+          challenge_target_id: string | null
           counter: number
           created_at: string
           ended_at: string | null
@@ -68,6 +69,7 @@ export type Database = {
         Insert: {
           cashed_out_at?: number | null
           cashed_out_by?: string | null
+          challenge_target_id?: string | null
           counter?: number
           created_at?: string
           ended_at?: string | null
@@ -88,6 +90,7 @@ export type Database = {
         Update: {
           cashed_out_at?: number | null
           cashed_out_by?: string | null
+          challenge_target_id?: string | null
           counter?: number
           created_at?: string
           ended_at?: string | null
@@ -109,6 +112,13 @@ export type Database = {
           {
             foreignKeyName: "chicken_games_cashed_out_by_fkey"
             columns: ["cashed_out_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chicken_games_challenge_target_id_fkey"
+            columns: ["challenge_target_id"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]

@@ -17,7 +17,7 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    const { walletAddress, stakeAmount = 0.05 } = await req.json();
+    const { walletAddress, stakeAmount = 0.05, targetProfileId } = await req.json();
 
     if (!walletAddress) {
       throw new Error("walletAddress is required");
@@ -44,13 +44,60 @@ serve(async (req) => {
       profile = newProfile;
     }
 
-    // Look for a waiting game with matching stake
+    // === FLOW 1: Friend Challenge (targeted) ===
+    if (targetProfileId) {
+      // Check if there's already a pending challenge between these two
+      const { data: existing } = await supabase
+        .from("chicken_games")
+        .select("id")
+        .eq("player_a_id", profile.id)
+        .eq("challenge_target_id", targetProfileId)
+        .eq("status", "challenge_pending")
+        .maybeSingle();
+
+      if (existing) {
+        return new Response(
+          JSON.stringify({
+            status: "challenge_pending",
+            gameId: existing.id,
+            role: "player_a",
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const { data: newGame, error: createErr } = await supabase
+        .from("chicken_games")
+        .insert({
+          player_a_id: profile.id,
+          challenge_target_id: targetProfileId,
+          stake_amount: stakeAmount,
+          status: "challenge_pending",
+        })
+        .select("id")
+        .single();
+
+      if (createErr) throw createErr;
+
+      return new Response(
+        JSON.stringify({
+          status: "challenge_pending",
+          gameId: newGame.id,
+          role: "player_a",
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // === FLOW 2: Random Arena Matching (no target) ===
+    // Look for open waiting games (no challenge target)
     const { data: waitingGame } = await supabase
       .from("chicken_games")
       .select("*")
       .eq("status", "waiting")
       .eq("stake_amount", stakeAmount)
       .is("player_b_id", null)
+      .is("challenge_target_id", null)
       .neq("player_a_id", profile.id)
       .order("created_at", { ascending: true })
       .limit(1)
@@ -78,7 +125,7 @@ serve(async (req) => {
       );
     }
 
-    // Create new game
+    // Create new open game
     const { data: newGame, error: createErr } = await supabase
       .from("chicken_games")
       .insert({

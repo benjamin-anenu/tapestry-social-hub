@@ -10,6 +10,7 @@ import IdentityCard from "@/components/play/IdentityCard";
 import CreateTapestryProfile from "@/components/play/CreateTapestryProfile";
 import EditProfileSheet from "@/components/play/EditProfileSheet";
 import MainHub from "@/components/play/MainHub";
+import ChickenChallengeAlert from "@/components/chicken/ChickenChallengeAlert";
 import { supabase } from "@/integrations/supabase/client";
 
 type Phase = "connect" | "identity" | "lobby";
@@ -21,6 +22,14 @@ const Play = () => {
   const { profile, isLoading, error } = useTapestryIdentity(walletAddress);
   const [phase, setPhase] = useState<Phase>("connect");
   const [createdProfile, setCreatedProfile] = useState<Record<string, unknown> | null>(null);
+  const [myProfileId, setMyProfileId] = useState<string | null>(null);
+
+  // Fetch profile ID for challenge alerts
+  useEffect(() => {
+    if (!walletAddress) { setMyProfileId(null); return; }
+    supabase.from("profiles").select("id").eq("wallet_address", walletAddress).single()
+      .then(({ data }) => { if (data) setMyProfileId(data.id); });
+  }, [walletAddress]);
 
   // Auto-advance when wallet connects
   useEffect(() => {
@@ -62,6 +71,10 @@ const Play = () => {
 
   return (
     <div className="relative flex min-h-screen flex-col items-center bg-background grid-bg overflow-hidden scanlines">
+      {/* Challenge notification overlay */}
+      {myProfileId && walletAddress && (
+        <ChickenChallengeAlert myProfileId={myProfileId} walletAddress={walletAddress} />
+      )}
       {/* Ambient */}
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute -top-40 left-1/2 h-[600px] w-[600px] -translate-x-1/2 rounded-full bg-primary/5 blur-[150px]" />
