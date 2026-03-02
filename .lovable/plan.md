@@ -1,97 +1,242 @@
 
-# Plan: Professional README + UX Bug Audit
 
-## Part 1: Rewrite README.md
+# CHICKEN Game - Full Implementation Plan
 
-Replace the auto-generated Lovable boilerplate with a professional, developer-facing README that documents the project properly. The new README will include:
-
-### Structure
-1. **Project Title and Description** -- Vibe60: a 60-second anonymous vibe-matching social app on Solana, built for the Tapestry Hackathon
-2. **Live URL** -- https://vibe60.lovable.app
-3. **Tech Stack** -- React 18, TypeScript, Vite, Tailwind CSS, shadcn/ui, Framer Motion, Solana Wallet Adapter, Supabase (backend + edge functions), Tapestry Protocol, PWA (vite-plugin-pwa)
-4. **Features Overview** -- Wallet-based auth, 60s vibe chat (human or AI bot "Queen Tapestry"), mutual vibe reveals with on-chain Tapestry follows, friends/DM system, admin dashboard, PWA installable
-5. **Architecture** -- Frontend SPA with 15 Supabase Edge Functions handling matchmaking, chat, verdicts, identity sync, admin operations
-6. **Edge Functions Reference** -- Table listing each function and its purpose
-7. **Getting Started (Local Development)** -- Clone, install (npm/bun), set up environment variables, run dev server
-8. **Environment Variables** -- Document required `.env` vars (`VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`) and edge function secrets (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `TAPESTRY_API_KEY`, `LOVABLE_API_KEY`)
-9. **Deployment** -- Instructions for Vercel (recommended), Netlify, and Cloudflare Pages as standard hosting platforms. Note that edge functions require a Supabase project
-10. **Database** -- Mention key tables (profiles, vibe_sessions, conversations, direct_messages, admin_wallets, app_settings, games, matchmaking_queue)
-11. **Project Structure** -- Brief directory tree overview
-12. **License / Credits** -- Tapestry Hackathon, Solana
-
-### What will NOT be in the README
-- No Lovable-specific instructions or URLs
-- No "REPLACE_WITH_PROJECT_ID" placeholders
-- No mention of Lovable subscriptions or deployment via Lovable
+## Overview
+Build a real-time "Chicken" nerve game where two players stake SOL into an escrow wallet. A counter climbs from 1 to 100. The first player to cash out WINS the pot (minus 10% platform fee). If both wait until 100, both lose and the platform keeps everything.
 
 ---
 
-## Part 2: UX Loopholes / Bugs Identified
+## Architecture
 
-After reviewing the codebase, here are potential issues:
-
-### 1. No wallet guard on VibeMatch page (Medium severity)
-**File:** `src/pages/VibeMatch.tsx` (line 25)
-**Issue:** If a user navigates directly to `/play/vibe` without connecting a wallet, `walletAddress` is `null`. The `findMatch` effect (line 99) has a guard `if (!walletAddress) return`, so the page just shows the "searching" spinner forever with no way to connect or go back easily.
-**Fix:** Add a wallet check at the top of the component -- if no wallet is connected, redirect to `/play` or show a "Connect Wallet" prompt.
-
-### 2. No wallet guard on Friends page (Medium severity)
-**File:** `src/pages/Friends.tsx` (line 68)
-**Issue:** Same problem -- navigating to `/play/friends` without a wallet shows an empty loading state forever.
-**Fix:** Redirect to `/play` if wallet not connected.
-
-### 3. VibeMatch timer starts immediately for bot matches, ignoring chat_starts_at (Low severity)
-**File:** `src/pages/VibeMatch.tsx` (lines 114-119)
-**Issue:** For bot matches, the phase jumps directly to "chatting" (skipping countdown). The 60s GameTimer starts immediately. This is intentional but worth noting -- bot matches feel instant vs. human matches which get a 3-2-1-GO countdown.
-
-### 4. Verdict double-submit protection relies on ref only (Low severity)
-**File:** `src/pages/VibeMatch.tsx` (line 237)
-**Issue:** `submittingVerdict.current` prevents double submission, but if the API call fails (line 257-259), the ref is reset to `false`, allowing a retry. This is actually correct behavior. No bug here.
-
-### 5. Session expiry race condition in vibe-match (Low severity)
-**File:** `supabase/functions/vibe-match/index.ts` (lines 99-103)
-**Issue:** `SESSION_EXPIRY_MS` is 3 minutes, but the polling interval on the client is 2.5 seconds. A waiting session could be expired server-side while the client is still polling, causing the poll to return "expired" status. This is handled correctly (line 167-168 shows "Session expired -- try again!"). No actual bug, just a slightly aggressive 3-minute timeout.
-
-### 6. Heartbeat runs on BOTH Play.tsx and VibeMatch.tsx (Low severity)
-**File:** `src/pages/Play.tsx` (lines 37-56) and `src/pages/VibeMatch.tsx` (lines 54-65)
-**Issue:** Both pages run independent 30s heartbeat intervals. When navigating from Play to VibeMatch, there's a brief overlap where two heartbeats fire. The old one cleans up via the effect return, but there's a small window of double-firing. Not a functional bug, just redundant API calls.
-
-### 7. No back button or escape during VibeMatch chatting phase (UX concern)
-**File:** `src/pages/VibeMatch.tsx` (lines 316-361)
-**Issue:** Once in the "chatting" phase, the user has no way to leave until the 60s timer expires. This is by design (preventing early exits to ensure fair matches), but there's no visible indication to the user that they must wait. If the app is buggy or the partner is unresponsive, the user is trapped for 60 seconds.
-
-### 8. Onboarding stored in localStorage only (Low severity)
-**File:** `src/hooks/useOnboarding.ts`
-**Issue:** Onboarding completion is stored in `localStorage`. Clearing browser data or using a new device forces re-onboarding. This is acceptable for a hackathon project but worth noting.
-
----
-
-## Technical Details
-
-### Files to Change
-| File | Change |
-|------|--------|
-| `README.md` | Complete rewrite with professional documentation |
-| `src/pages/VibeMatch.tsx` | Add wallet guard -- redirect to `/play` if no wallet |
-| `src/pages/Friends.tsx` | Add wallet guard -- redirect to `/play` if no wallet |
-
-### Wallet Guard Implementation
-Both `VibeMatch.tsx` and `Friends.tsx` will add an early check:
-
-```typescript
-// At the top of the component, after wallet hooks
-if (!connected) {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="flex flex-col items-center gap-4 text-center px-6">
-        <p className="font-mono text-sm text-muted-foreground">
-          Connect your wallet first to access this page.
-        </p>
-        <Button onClick={() => navigate("/play")}>
-          Connect Wallet
-        </Button>
-      </div>
-    </div>
-  );
-}
+```text
++------------------+       +-------------------+       +------------------+
+|   Player A       |       |   Edge Functions   |       |   Player B       |
+|   (React + Wallet)|<---->|   (Game Server)    |<----->|   (React + Wallet)|
++------------------+       +-------------------+       +------------------+
+        |                          |                            |
+        |   Send SOL to escrow     |                            |
+        |------------------------->|<---------------------------|
+        |                          |                            |
+        |        Realtime DB       |                            |
+        |<---- counter ticks ----->|<---- counter ticks ------->|
+        |                          |                            |
+        |   "CASH OUT" action      |                            |
+        |------------------------->|                            |
+        |                          |--- payout SOL to winner -->|
+        |                          |   (from escrow wallet)     |
 ```
+
+---
+
+## 1. Database Changes
+
+### New table: `chicken_games`
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | uuid PK | |
+| player_a_id | uuid | profile ID |
+| player_b_id | uuid | nullable (waiting for opponent) |
+| stake_amount | numeric | SOL per player (default 0.05) |
+| platform_fee | numeric | 10% of total pot |
+| counter | integer | current value 0-100 |
+| status | text | waiting, depositing, active, finished |
+| player_a_deposited | boolean | confirmed on-chain |
+| player_b_deposited | boolean | confirmed on-chain |
+| player_a_tx | text | deposit transaction signature |
+| player_b_tx | text | deposit transaction signature |
+| cashed_out_by | uuid | profile ID of winner (first to cash out) |
+| cashed_out_at | integer | counter value when cashed out |
+| payout_tx | text | payout transaction signature |
+| winner_id | uuid | null if both lose |
+| created_at | timestamptz | |
+| started_at | timestamptz | when counter begins |
+| ended_at | timestamptz | |
+
+### Add `chicken` to game_role enum
+- ALTER TYPE game_role ADD VALUE 'chicken'
+
+### Enable Realtime
+- ALTER PUBLICATION supabase_realtime ADD TABLE chicken_games
+
+### RLS Policies
+- SELECT: anyone can view (spectator mode)
+- UPDATE: only via service role (edge functions control state)
+- INSERT: only via service role
+
+---
+
+## 2. Escrow Wallet Setup
+
+### Secret needed: `ESCROW_WALLET_PRIVATE_KEY`
+- Generate a new Solana keypair (devnet for hackathon)
+- Store the private key as a backend secret
+- The public address is derived server-side and sent to clients for deposits
+
+### Edge function: `chicken-escrow-info`
+- Returns the escrow wallet public address to the client
+- Client builds a SOL transfer transaction to this address
+- Client signs with their wallet and submits to Solana network
+
+---
+
+## 3. Edge Functions
+
+### `chicken-create` - Create or join a game
+- If a waiting game exists with matching stake, join it as player_b
+- Otherwise create a new game as player_a with status "waiting"
+- Returns game ID and escrow wallet address
+
+### `chicken-deposit` - Verify deposit
+- Player submits their transaction signature
+- Edge function checks the Solana blockchain to confirm:
+  - Correct amount sent to escrow address
+  - Transaction is finalized
+- Marks player_a_deposited or player_b_deposited = true
+- When BOTH deposited, sets status to "active" and started_at = now()
+
+### `chicken-tick` - Counter heartbeat (server-driven)
+- Called by a setInterval on the client (or server cron)
+- Increments counter by 1 every ~1 second
+- Updates the chicken_games row (triggers Realtime to both clients)
+- If counter reaches 100: status = "finished", no winner, platform keeps pot
+
+### `chicken-cashout` - Player cashes out
+- Validates the player is in the game and game is active
+- Sets cashed_out_by = player profile ID, cashed_out_at = current counter
+- Calculates payout: (stake x 2) - 10% fee
+- Transfers SOL from escrow wallet to winner's wallet address
+- Stores payout_tx signature
+- Sets status = "finished", winner_id
+
+### `chicken-bot-gameplay` - NOT NEEDED
+- Human vs human only per your request
+
+---
+
+## 4. Client Flow
+
+### New route: `/play/chicken`
+### New page: `src/pages/Chicken.tsx`
+
+**Phase 1: Lobby**
+- Show current stake amount (0.05 SOL)
+- "FIND OPPONENT" button
+- Calls `chicken-create`, gets game ID
+- If waiting, show "Waiting for opponent..." with Realtime subscription
+
+**Phase 2: Deposit**
+- Both players matched
+- Show escrow address and "DEPOSIT 0.05 SOL" button
+- Client builds `SystemProgram.transfer` transaction
+- User signs with Phantom/Solflare
+- Submit tx signature to `chicken-deposit`
+- Show deposit status for both players
+
+**Phase 3: Active Game**
+- Full-screen counter (huge number, center screen)
+- Color zones: green (1-30), yellow (30-60), orange (60-90), red pulsing (90-100)
+- Player status indicators (YOU: still in, OPPONENT: still in)
+- Giant "CASH OUT NOW" button
+- Pot display
+- Realtime subscription updates counter + opponent status
+
+**Phase 4: Result**
+- Win: confetti-style animation, show payout amount and tx link
+- Lose: "CHICKEN" label, show what you lost
+- Both lose (counter 100): "MUTUAL DESTRUCTION" screen
+
+### New component: `src/components/chicken/ChickenGame.tsx`
+- The main game UI with counter, status, cash out button
+- Subscribes to Realtime updates on chicken_games table
+
+### New component: `src/components/chicken/ChickenDeposit.tsx`
+- Handles the SOL deposit flow with wallet adapter
+
+### New component: `src/components/chicken/ChickenResult.tsx`
+- Win/loss/draw result screen
+
+---
+
+## 5. Solana Integration Details
+
+### Client-side deposit (in ChickenDeposit):
+```text
+1. Get escrow public key from chicken-escrow-info
+2. Build SystemProgram.transfer instruction
+3. Sign with useWallet().sendTransaction()
+4. Send tx signature to chicken-deposit for verification
+```
+
+### Server-side payout (in chicken-cashout):
+```text
+1. Load escrow keypair from ESCROW_WALLET_PRIVATE_KEY secret
+2. Build SystemProgram.transfer from escrow to winner
+3. Sign with escrow keypair
+4. Submit transaction to Solana RPC
+5. Store signature in chicken_games.payout_tx
+```
+
+### Network: devnet for hackathon (switch WalletProvider endpoint)
+
+---
+
+## 6. Counter Synchronization
+
+The counter must be server-authoritative to prevent cheating:
+- Client A calls `chicken-tick` every 1 second
+- Edge function only increments if enough real time has passed (anti-spam)
+- Both clients receive updates via Realtime subscription on the chicken_games row
+- Either client can drive the tick (first one wins, deduped server-side)
+
+---
+
+## 7. MainHub Update
+
+Add a new card to MainHub for "Chicken":
+- Title: "Chicken"
+- Desc: "Stake SOL, test your nerve"
+- Icon: custom chicken/flame icon
+- Path: `/play/chicken`
+- Enabled (not disabled)
+
+---
+
+## 8. File Summary
+
+| File | Action |
+|------|--------|
+| `supabase/functions/chicken-create/index.ts` | New - matchmaking |
+| `supabase/functions/chicken-deposit/index.ts` | New - verify SOL deposit |
+| `supabase/functions/chicken-tick/index.ts` | New - increment counter |
+| `supabase/functions/chicken-cashout/index.ts` | New - payout logic |
+| `supabase/functions/chicken-escrow-info/index.ts` | New - return escrow address |
+| `src/pages/Chicken.tsx` | New - page with phases |
+| `src/components/chicken/ChickenGame.tsx` | New - main game UI |
+| `src/components/chicken/ChickenDeposit.tsx` | New - deposit flow |
+| `src/components/chicken/ChickenResult.tsx` | New - result screen |
+| `src/components/play/MainHub.tsx` | Edit - add Chicken card |
+| `src/App.tsx` | Edit - add /play/chicken route |
+| `supabase/config.toml` | Auto-updated for new functions |
+| DB migration | New table + enum + realtime |
+
+---
+
+## 9. What You Need To Do
+
+Before I start building:
+1. **Generate an escrow wallet keypair** - I will ask you to paste the private key as a secret so the backend can sign payout transactions
+2. The wallet provider will need to switch to **devnet** for testing with free SOL (currently on mainnet-beta)
+
+---
+
+## 10. Security Notes
+
+- Counter is server-authoritative (no client manipulation)
+- Deposits verified on-chain before game starts
+- Payouts only from server with escrow key
+- RLS restricts direct table writes; all mutations go through edge functions with service role
+- 10% fee ensures platform sustainability
+- Double cash-out race condition handled by checking cashed_out_by before updating
+
