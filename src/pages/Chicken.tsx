@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, Loader2, Flame } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,8 +29,12 @@ interface ResultData {
 
 const Chicken = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { publicKey } = useWallet();
   const walletAddress = publicKey?.toBase58() ?? null;
+
+  const challengeTargetId = searchParams.get("challenge");
+  const respondGameId = searchParams.get("gameId");
 
   const [phase, setPhase] = useState<Phase>("lobby");
   const [gameState, setGameState] = useState<GameState | null>(null);
@@ -40,6 +44,7 @@ const Chicken = () => {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [stakeAmount, setStakeAmount] = useState(0.05);
+  const [autoTriggered, setAutoTriggered] = useState(false);
 
   // Redirect if no wallet
   useEffect(() => {
@@ -48,7 +53,20 @@ const Chicken = () => {
     }
   }, [walletAddress, navigate]);
 
-  // Subscribe to game changes for waiting/deposit phases
+  // Auto-trigger for challenge or respond params
+  useEffect(() => {
+    if (autoTriggered || !walletAddress) return;
+
+    if (challengeTargetId) {
+      setAutoTriggered(true);
+      handleCreateChallenge(challengeTargetId);
+    } else if (respondGameId) {
+      setAutoTriggered(true);
+      handleJoinFromChallenge(respondGameId);
+    }
+  }, [walletAddress, challengeTargetId, respondGameId, autoTriggered]);
+
+  // Subscribe to game changes
   useEffect(() => {
     if (!gameState?.gameId) return;
 
@@ -65,7 +83,7 @@ const Chicken = () => {
         (payload) => {
           const game = payload.new as Record<string, unknown>;
 
-          if (game.status === "depositing" && phase === "waiting") {
+          if (game.status === "depositing" && (phase === "waiting" || phase === "lobby")) {
             setPhase("deposit");
           }
 
@@ -73,7 +91,6 @@ const Chicken = () => {
             setPhase("active");
           }
 
-          // Update deposit status
           const isA = gameState.role === "player_a";
           setMyDeposited(isA ? (game.player_a_deposited as boolean) : (game.player_b_deposited as boolean));
           setOpponentDeposited(isA ? (game.player_b_deposited as boolean) : (game.player_a_deposited as boolean));
@@ -86,39 +103,99 @@ const Chicken = () => {
     };
   }, [gameState?.gameId, gameState?.role, phase]);
 
+  const getEscrowAndProfile = async () => {
+    const { data: escrowData, error: escrowErr } = await supabase.functions.invoke("chicken-escrow-info");
+    if (escrowErr) throw new Error(escrowErr.message);
+    if (escrowData?.error) throw new Error(escrowData.error);
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("wallet_address", walletAddress!)
+      .single();
+
+    return { escrowPublicKey: escrowData.escrowPublicKey, profileId: profile?.id || "" };
+  };
+
+  const handleCreateChallenge = async (targetId: string) => {
+    if (!walletAddress) return;
+    setLoading(true);
+    setError(null);
+
+    try {
+      const { escrowPublicKey, profileId } = await getEscrowAndProfile();
+
+      const { data, error: createErr } = await supabase.functions.invoke("chicken-create", {
+        body: { walletAddress, stakeAmount, targetProfileId: targetId },
+      });
+      if (createErr) throw new Error(createErr.message);
+      if (data?.error) throw new Error(data.error);
+
+      setGameState({
+        gameId: data.gameId,
+        role: "player_a",
+        stakeAmount,
+        escrowPublicKey,
+        myProfileId: profileId,
+      });
+      setPhase("waiting");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleJoinFromChallenge = async (gameId: string) => {
+    if (!walletAddress) return;
+    setLoading(true);
+    setError(null);
+
+    try {
+      const { escrowPublicKey, profileId } = await getEscrowAndProfile();
+
+      // Get game details
+      const { data: game } = await supabase
+        .from("chicken_games")
+        .select("stake_amount")
+        .eq("id", gameId)
+        .single();
+
+      setGameState({
+        gameId,
+        role: "player_b",
+        stakeAmount: game?.stake_amount || 0.05,
+        escrowPublicKey,
+        myProfileId: profileId,
+      });
+      setPhase("deposit");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleFindOpponent = async () => {
     if (!walletAddress) return;
     setLoading(true);
     setError(null);
 
     try {
-      // Get escrow info first
-      const { data: escrowData, error: escrowErr } = await supabase.functions.invoke(
-        "chicken-escrow-info"
-      );
-      if (escrowErr) throw new Error(escrowErr.message);
-      if (escrowData?.error) throw new Error(escrowData.error);
+      const { escrowPublicKey, profileId } = await getEscrowAndProfile();
 
-      // Create or join game
       const { data, error: createErr } = await supabase.functions.invoke("chicken-create", {
         body: { walletAddress, stakeAmount },
       });
       if (createErr) throw new Error(createErr.message);
       if (data?.error) throw new Error(data.error);
 
-      // Get profile ID
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("id")
-        .eq("wallet_address", walletAddress)
-        .single();
-
       setGameState({
         gameId: data.gameId,
         role: data.role,
         stakeAmount,
-        escrowPublicKey: escrowData.escrowPublicKey,
-        myProfileId: profile?.id || "",
+        escrowPublicKey,
+        myProfileId: profileId,
       });
 
       if (data.status === "matched") {
@@ -127,8 +204,7 @@ const Chicken = () => {
         setPhase("waiting");
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Something went wrong";
-      setError(message);
+      setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
       setLoading(false);
     }
@@ -154,7 +230,10 @@ const Chicken = () => {
     setOpponentDeposited(false);
     setResultData(null);
     setError(null);
+    setAutoTriggered(false);
   };
+
+  const isChallenge = !!challengeTargetId;
 
   return (
     <div className="relative flex min-h-screen flex-col bg-background text-foreground">
@@ -176,7 +255,7 @@ const Chicken = () => {
       <div className="flex flex-1 flex-col items-center justify-center px-4">
         <AnimatePresence mode="wait">
           {/* LOBBY */}
-          {phase === "lobby" && (
+          {phase === "lobby" && !loading && (
             <motion.div
               key="lobby"
               initial={{ opacity: 0, y: 20 }}
@@ -238,6 +317,22 @@ const Chicken = () => {
             </motion.div>
           )}
 
+          {/* LOADING (auto-trigger) */}
+          {phase === "lobby" && loading && (
+            <motion.div
+              key="loading"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="flex flex-col items-center gap-4 text-center"
+            >
+              <Loader2 className="h-16 w-16 animate-spin text-primary" />
+              <h2 className="font-display text-xl font-bold">
+                {isChallenge ? "Sending challenge..." : "Joining game..."}
+              </h2>
+            </motion.div>
+          )}
+
           {/* WAITING */}
           {phase === "waiting" && (
             <motion.div
@@ -249,10 +344,12 @@ const Chicken = () => {
             >
               <Loader2 className="h-16 w-16 animate-spin text-primary" />
               <h2 className="font-display text-2xl font-bold">
-                Waiting for opponent...
+                {isChallenge ? "Challenge sent!" : "Waiting for opponent..."}
               </h2>
               <p className="text-sm text-muted-foreground">
-                Someone will join your game soon
+                {isChallenge
+                  ? "Waiting for your friend to accept..."
+                  : "Someone will join your game soon"}
               </p>
             </motion.div>
           )}
