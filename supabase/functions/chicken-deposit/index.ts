@@ -50,21 +50,31 @@ serve(async (req) => {
     const isPlayerB = game.player_b_id === profile.id;
     if (!isPlayerA && !isPlayerB) throw new Error("You are not in this game");
 
-    // Verify the transaction on Solana devnet
-    const txResponse = await fetch(SOLANA_RPC, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "getTransaction",
-        params: [txSignature, { encoding: "jsonParsed", maxSupportedTransactionVersion: 0 }],
-      }),
-    });
+    // Verify the transaction on Solana devnet (with retries for indexing delay)
+    let txData: Record<string, unknown> | null = null;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const txResponse = await fetch(SOLANA_RPC, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "getTransaction",
+          params: [txSignature, { encoding: "jsonParsed", maxSupportedTransactionVersion: 0 }],
+        }),
+      });
 
-    const txData = await txResponse.json();
-    if (!txData.result) {
-      throw new Error("Transaction not found or not confirmed yet. Try again in a few seconds.");
+      const parsed = await txResponse.json();
+      if (parsed.result) {
+        txData = parsed;
+        break;
+      }
+      // Wait 2 seconds before retrying
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+
+    if (!txData || !txData.result) {
+      throw new Error("Transaction not confirmed after multiple attempts. Please try again.");
     }
 
     // Verify the transaction transferred the correct amount to escrow
@@ -97,8 +107,9 @@ serve(async (req) => {
 
     const escrowPubkey = toBase58(publicKeyBytes);
 
-    // Check instructions for a transfer to the escrow
-    const instructions = txData.result.transaction?.message?.instructions || [];
+    const txResult = txData.result as Record<string, unknown>;
+    const txMessage = (txResult.transaction as Record<string, unknown>)?.message as Record<string, unknown>;
+    const instructions = (txMessage?.instructions as Array<Record<string, unknown>>) || [];
     const stakeInLamports = Math.round(game.stake_amount * 1_000_000_000);
     let validTransfer = false;
 
