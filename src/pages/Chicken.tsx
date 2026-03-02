@@ -45,6 +45,7 @@ const Chicken = () => {
   const [loading, setLoading] = useState(false);
   const [stakeAmount, setStakeAmount] = useState(0.05);
   const [autoTriggered, setAutoTriggered] = useState(false);
+  const [waitCountdown, setWaitCountdown] = useState(30);
 
   // Redirect if no wallet
   useEffect(() => {
@@ -102,6 +103,25 @@ const Chicken = () => {
       supabase.removeChannel(channel);
     };
   }, [gameState?.gameId, gameState?.role, phase]);
+
+  // 30-second timeout for arena random matching (not friend challenges)
+  useEffect(() => {
+    if (phase !== "waiting" || challengeTargetId) return;
+    setWaitCountdown(30);
+    const interval = setInterval(() => {
+      setWaitCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          setPhase("lobby");
+          setError("No players available right now. Try again!");
+          setGameState(null);
+          return 30;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [phase, challengeTargetId]);
 
   const getEscrowAndProfile = async () => {
     const { data: escrowData, error: escrowErr } = await supabase.functions.invoke("chicken-escrow-info");
@@ -349,7 +369,7 @@ const Chicken = () => {
               <p className="text-sm text-muted-foreground">
                 {isChallenge
                   ? "Waiting for your friend to accept..."
-                  : "Someone will join your game soon"}
+                  : `Searching... ${waitCountdown}s remaining`}
               </p>
             </motion.div>
           )}
