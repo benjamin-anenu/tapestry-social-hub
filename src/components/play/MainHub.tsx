@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Heart, Users, Gamepad2, ArrowRight, Lock } from "lucide-react";
+import { Heart, Users, Gamepad2, Flame, ArrowRight, Lock } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { useWallet } from "@solana/wallet-adapter-react";
@@ -89,6 +89,16 @@ const MainHub = () => {
     glow: "glow-green",
     disabled: false,
     badge: unreadCount > 0 ? unreadCount : null
+  },
+  {
+    title: "Chicken 🔥",
+    desc: "Stake SOL, test your nerve",
+    icon: Flame,
+    path: "/play/chicken",
+    gradient: "var(--gradient-danger)",
+    glow: "glow-red",
+    disabled: false,
+    badge: null
   },
   {
     title: "Game Arena",

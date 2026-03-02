@@ -1,0 +1,315 @@
+import { useEffect, useState, useCallback } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { ArrowLeft, Loader2, Flame } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { useWallet } from "@solana/wallet-adapter-react";
+import { Button } from "@/components/ui/button";
+import { supabase } from "@/integrations/supabase/client";
+import ChickenDeposit from "@/components/chicken/ChickenDeposit";
+import ChickenGame from "@/components/chicken/ChickenGame";
+import ChickenResult from "@/components/chicken/ChickenResult";
+
+type Phase = "lobby" | "waiting" | "deposit" | "active" | "result";
+
+interface GameState {
+  gameId: string;
+  role: "player_a" | "player_b";
+  stakeAmount: number;
+  escrowPublicKey: string;
+  myProfileId: string;
+}
+
+interface ResultData {
+  result: "win" | "lose" | "mutual_destruction";
+  payout?: number;
+  payoutTx?: string | null;
+  cashedOutAt?: number;
+}
+
+const Chicken = () => {
+  const navigate = useNavigate();
+  const { publicKey } = useWallet();
+  const walletAddress = publicKey?.toBase58() ?? null;
+
+  const [phase, setPhase] = useState<Phase>("lobby");
+  const [gameState, setGameState] = useState<GameState | null>(null);
+  const [myDeposited, setMyDeposited] = useState(false);
+  const [opponentDeposited, setOpponentDeposited] = useState(false);
+  const [resultData, setResultData] = useState<ResultData | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const stakeAmount = 0.05;
+
+  // Redirect if no wallet
+  useEffect(() => {
+    if (!walletAddress) {
+      navigate("/play");
+    }
+  }, [walletAddress, navigate]);
+
+  // Subscribe to game changes for waiting/deposit phases
+  useEffect(() => {
+    if (!gameState?.gameId) return;
+
+    const channel = supabase
+      .channel(`chicken-lobby-${gameState.gameId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "chicken_games",
+          filter: `id=eq.${gameState.gameId}`,
+        },
+        (payload) => {
+          const game = payload.new as Record<string, unknown>;
+
+          if (game.status === "depositing" && phase === "waiting") {
+            setPhase("deposit");
+          }
+
+          if (game.status === "active" && phase === "deposit") {
+            setPhase("active");
+          }
+
+          // Update deposit status
+          const isA = gameState.role === "player_a";
+          setMyDeposited(isA ? (game.player_a_deposited as boolean) : (game.player_b_deposited as boolean));
+          setOpponentDeposited(isA ? (game.player_b_deposited as boolean) : (game.player_a_deposited as boolean));
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [gameState?.gameId, gameState?.role, phase]);
+
+  const handleFindOpponent = async () => {
+    if (!walletAddress) return;
+    setLoading(true);
+    setError(null);
+
+    try {
+      // Get escrow info first
+      const { data: escrowData, error: escrowErr } = await supabase.functions.invoke(
+        "chicken-escrow-info"
+      );
+      if (escrowErr) throw new Error(escrowErr.message);
+      if (escrowData?.error) throw new Error(escrowData.error);
+
+      // Create or join game
+      const { data, error: createErr } = await supabase.functions.invoke("chicken-create", {
+        body: { walletAddress, stakeAmount },
+      });
+      if (createErr) throw new Error(createErr.message);
+      if (data?.error) throw new Error(data.error);
+
+      // Get profile ID
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("wallet_address", walletAddress)
+        .single();
+
+      setGameState({
+        gameId: data.gameId,
+        role: data.role,
+        stakeAmount,
+        escrowPublicKey: escrowData.escrowPublicKey,
+        myProfileId: profile?.id || "",
+      });
+
+      if (data.status === "matched") {
+        setPhase("deposit");
+      } else {
+        setPhase("waiting");
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Something went wrong";
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGameEnd = useCallback(
+    (result: "win" | "lose" | "mutual_destruction", data?: Record<string, unknown>) => {
+      setResultData({
+        result,
+        payout: data?.payout as number | undefined,
+        payoutTx: data?.payoutTx as string | null | undefined,
+        cashedOutAt: data?.cashedOutAt as number | undefined,
+      });
+      setPhase("result");
+    },
+    []
+  );
+
+  const handlePlayAgain = () => {
+    setPhase("lobby");
+    setGameState(null);
+    setMyDeposited(false);
+    setOpponentDeposited(false);
+    setResultData(null);
+    setError(null);
+  };
+
+  return (
+    <div className="relative flex min-h-screen flex-col bg-background text-foreground">
+      {/* Header */}
+      <div className="flex items-center gap-3 p-4">
+        <button
+          onClick={() => navigate("/play")}
+          className="rounded-full p-2 text-muted-foreground hover:bg-muted"
+        >
+          <ArrowLeft className="h-5 w-5" />
+        </button>
+        <div className="flex items-center gap-2">
+          <Flame className="h-5 w-5 text-orange-500" />
+          <span className="font-display text-lg font-bold">CHICKEN</span>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="flex flex-1 flex-col items-center justify-center px-4">
+        <AnimatePresence mode="wait">
+          {/* LOBBY */}
+          {phase === "lobby" && (
+            <motion.div
+              key="lobby"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="flex flex-col items-center gap-6 text-center"
+            >
+              <motion.div
+                animate={{ scale: [1, 1.1, 1] }}
+                transition={{ duration: 2, repeat: Infinity }}
+              >
+                <Flame className="h-20 w-20 text-orange-500" />
+              </motion.div>
+              <h1 className="font-display text-3xl font-black">
+                THE ULTIMATE NERVE GAME
+              </h1>
+              <p className="max-w-sm text-muted-foreground">
+                A counter climbs from 1 to 100. Cash out first and you{" "}
+                <span className="font-bold text-primary">WIN the pot</span>. Wait too
+                long and you{" "}
+                <span className="font-bold text-destructive">LOSE EVERYTHING</span>.
+              </p>
+
+              <div className="rounded-xl border border-border bg-card p-4">
+                <p className="text-sm text-muted-foreground">Stake</p>
+                <p className="font-mono text-2xl font-bold text-primary">
+                  {stakeAmount} SOL
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Winner gets {(stakeAmount * 2 * 0.9).toFixed(4)} SOL (10% fee)
+                </p>
+              </div>
+
+              <Button
+                onClick={handleFindOpponent}
+                disabled={loading}
+                size="lg"
+                className="w-full max-w-xs text-lg font-bold"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                    Finding...
+                  </>
+                ) : (
+                  "FIND OPPONENT 🔥"
+                )}
+              </Button>
+
+              {error && (
+                <p className="text-sm text-destructive">{error}</p>
+              )}
+            </motion.div>
+          )}
+
+          {/* WAITING */}
+          {phase === "waiting" && (
+            <motion.div
+              key="waiting"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="flex flex-col items-center gap-6 text-center"
+            >
+              <Loader2 className="h-16 w-16 animate-spin text-primary" />
+              <h2 className="font-display text-2xl font-bold">
+                Waiting for opponent...
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Someone will join your game soon
+              </p>
+            </motion.div>
+          )}
+
+          {/* DEPOSIT */}
+          {phase === "deposit" && gameState && (
+            <motion.div
+              key="deposit"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            >
+              <ChickenDeposit
+                gameId={gameState.gameId}
+                stakeAmount={gameState.stakeAmount}
+                escrowPublicKey={gameState.escrowPublicKey}
+                myDeposited={myDeposited}
+                opponentDeposited={opponentDeposited}
+                onDeposited={() => setMyDeposited(true)}
+              />
+            </motion.div>
+          )}
+
+          {/* ACTIVE GAME */}
+          {phase === "active" && gameState && (
+            <motion.div
+              key="active"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="w-full"
+            >
+              <ChickenGame
+                gameId={gameState.gameId}
+                walletAddress={walletAddress!}
+                myProfileId={gameState.myProfileId}
+                stakeAmount={gameState.stakeAmount}
+                onGameEnd={handleGameEnd}
+              />
+            </motion.div>
+          )}
+
+          {/* RESULT */}
+          {phase === "result" && resultData && (
+            <motion.div
+              key="result"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            >
+              <ChickenResult
+                result={resultData.result}
+                payout={resultData.payout}
+                payoutTx={resultData.payoutTx}
+                cashedOutAt={resultData.cashedOutAt}
+                stakeAmount={stakeAmount}
+                onPlayAgain={handlePlayAgain}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </div>
+  );
+};
+
+export default Chicken;

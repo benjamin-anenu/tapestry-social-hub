@@ -16,6 +16,7 @@ import Demo from "./pages/Demo";
 import Leaderboard from "./pages/Leaderboard";
 import Admin from "./pages/Admin";
 import Install from "./pages/Install";
+import Chicken from "./pages/Chicken";
 import NotFound from "./pages/NotFound";
 import { InstallPrompt } from "./components/pwa/InstallPrompt";
 
@@ -44,6 +45,7 @@ const AppContent = () => {
           <Route path="/demo" element={<Demo />} />
           <Route path="/leaderboard" element={<Leaderboard />} />
           <Route path="/admin" element={<Admin />} />
+          <Route path="/play/chicken" element={<Chicken />} />
           <Route path="/install" element={<Install />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
