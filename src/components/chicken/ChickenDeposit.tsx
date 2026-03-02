@@ -25,12 +25,14 @@ const ChickenDeposit = ({
 }: ChickenDepositProps) => {
   const { publicKey, sendTransaction } = useWallet();
   const [depositing, setDepositing] = useState(false);
+  const [verifyStatus, setVerifyStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const handleDeposit = async () => {
     if (!publicKey || !sendTransaction) return;
     setDepositing(true);
     setError(null);
+    setVerifyStatus(null);
 
     try {
       const connection = new Connection("https://api.devnet.solana.com", "confirmed");
@@ -44,12 +46,13 @@ const ChickenDeposit = ({
         })
       );
 
+      setVerifyStatus("Sending transaction...");
       const signature = await sendTransaction(transaction, connection);
 
-      // Wait for confirmation
+      setVerifyStatus("Waiting for on-chain confirmation...");
       await connection.confirmTransaction(signature, "confirmed");
 
-      // Verify with backend
+      setVerifyStatus("Verifying deposit with server...");
       const { data, error: fnErr } = await supabase.functions.invoke("chicken-deposit", {
         body: {
           gameId,
@@ -61,10 +64,12 @@ const ChickenDeposit = ({
       if (fnErr) throw new Error(fnErr.message);
       if (data?.error) throw new Error(data.error);
 
+      setVerifyStatus(null);
       onDeposited();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Deposit failed";
       setError(message);
+      setVerifyStatus(null);
     } finally {
       setDepositing(false);
     }
@@ -126,6 +131,13 @@ const ChickenDeposit = ({
             `DEPOSIT ${stakeAmount} SOL`
           )}
         </Button>
+      )}
+
+      {verifyStatus && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground animate-pulse">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          {verifyStatus}
+        </div>
       )}
 
       {error && (
