@@ -51,8 +51,11 @@ serve(async (req) => {
     if (!isPlayerA && !isPlayerB) throw new Error("You are not in this game");
 
     // Verify the transaction on Solana devnet (with retries for indexing delay)
-    let txData: Record<string, unknown> | null = null;
-    for (let attempt = 0; attempt < 5; attempt++) {
+    let txData: any = null;
+    let lastRpcError: string | null = null;
+    const maxAttempts = 12;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const txResponse = await fetch(SOLANA_RPC, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -60,21 +63,50 @@ serve(async (req) => {
           jsonrpc: "2.0",
           id: 1,
           method: "getTransaction",
-          params: [txSignature, { encoding: "jsonParsed", maxSupportedTransactionVersion: 0 }],
+          params: [
+            txSignature,
+            {
+              encoding: "jsonParsed",
+              commitment: "confirmed",
+              maxSupportedTransactionVersion: 0,
+            },
+          ],
         }),
       });
 
-      const parsed = await txResponse.json();
-      if (parsed.result) {
+      const parsed: any = await txResponse.json();
+      if (parsed?.error) {
+        lastRpcError = JSON.stringify(parsed.error);
+      }
+
+      if (parsed?.result) {
         txData = parsed;
         break;
       }
-      // Wait 2 seconds before retrying
-      await new Promise((r) => setTimeout(r, 2000));
+
+      const statusResponse = await fetch(SOLANA_RPC, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "getSignatureStatuses",
+          params: [[txSignature], { searchTransactionHistory: true }],
+        }),
+      });
+
+      const statusParsed: any = await statusResponse.json();
+      const status = statusParsed?.result?.value?.[0];
+      if (status?.err) {
+        throw new Error(`Transaction failed on-chain: ${JSON.stringify(status.err)}`);
+      }
+
+      await new Promise((r) => setTimeout(r, 1500));
     }
 
-    if (!txData || !txData.result) {
-      throw new Error("Transaction not confirmed after multiple attempts. Please try again.");
+    if (!txData?.result) {
+      const rpcHint = lastRpcError ? ` RPC error: ${lastRpcError}` : "";
+      throw new Error(`Transaction not confirmed after multiple attempts. Please try again.${rpcHint}`);
     }
 
     // Verify the transaction transferred the correct amount to escrow
