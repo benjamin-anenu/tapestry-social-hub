@@ -44,6 +44,98 @@ export type Database = {
         }
         Relationships: []
       }
+      chicken_games: {
+        Row: {
+          cashed_out_at: number | null
+          cashed_out_by: string | null
+          counter: number
+          created_at: string
+          ended_at: string | null
+          id: string
+          payout_tx: string | null
+          platform_fee: number
+          player_a_deposited: boolean
+          player_a_id: string
+          player_a_tx: string | null
+          player_b_deposited: boolean
+          player_b_id: string | null
+          player_b_tx: string | null
+          stake_amount: number
+          started_at: string | null
+          status: string
+          winner_id: string | null
+        }
+        Insert: {
+          cashed_out_at?: number | null
+          cashed_out_by?: string | null
+          counter?: number
+          created_at?: string
+          ended_at?: string | null
+          id?: string
+          payout_tx?: string | null
+          platform_fee?: number
+          player_a_deposited?: boolean
+          player_a_id: string
+          player_a_tx?: string | null
+          player_b_deposited?: boolean
+          player_b_id?: string | null
+          player_b_tx?: string | null
+          stake_amount?: number
+          started_at?: string | null
+          status?: string
+          winner_id?: string | null
+        }
+        Update: {
+          cashed_out_at?: number | null
+          cashed_out_by?: string | null
+          counter?: number
+          created_at?: string
+          ended_at?: string | null
+          id?: string
+          payout_tx?: string | null
+          platform_fee?: number
+          player_a_deposited?: boolean
+          player_a_id?: string
+          player_a_tx?: string | null
+          player_b_deposited?: boolean
+          player_b_id?: string | null
+          player_b_tx?: string | null
+          stake_amount?: number
+          started_at?: string | null
+          status?: string
+          winner_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chicken_games_cashed_out_by_fkey"
+            columns: ["cashed_out_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chicken_games_player_a_id_fkey"
+            columns: ["player_a_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chicken_games_player_b_id_fkey"
+            columns: ["player_b_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chicken_games_winner_id_fkey"
+            columns: ["winner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       conversations: {
         Row: {
           created_at: string
@@ -515,7 +607,7 @@ export type Database = {
       }
     }
     Enums: {
-      game_role: "hunter" | "hunted" | "duel"
+      game_role: "hunter" | "hunted" | "duel" | "chicken"
       game_status:
         | "waiting"
         | "matched"
@@ -649,7 +741,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      game_role: ["hunter", "hunted", "duel"],
+      game_role: ["hunter", "hunted", "duel", "chicken"],
       game_status: [
         "waiting",
         "matched",
