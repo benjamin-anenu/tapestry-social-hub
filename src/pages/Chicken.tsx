@@ -4,6 +4,7 @@ import { ArrowLeft, Loader2, Flame } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
 import ChickenDeposit from "@/components/chicken/ChickenDeposit";
 import ChickenGame from "@/components/chicken/ChickenGame";
@@ -38,7 +39,7 @@ const Chicken = () => {
   const [resultData, setResultData] = useState<ResultData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const stakeAmount = 0.05;
+  const [stakeAmount, setStakeAmount] = useState(0.05);
 
   // Redirect if no wallet
   useEffect(() => {
@@ -199,11 +200,17 @@ const Chicken = () => {
                 <span className="font-bold text-destructive">LOSE EVERYTHING</span>.
               </p>
 
-              <div className="rounded-xl border border-border bg-card p-4">
-                <p className="text-sm text-muted-foreground">Stake</p>
-                <p className="font-mono text-2xl font-bold text-primary">
-                  {stakeAmount} SOL
-                </p>
+              <div className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4">
+                <label className="text-sm text-muted-foreground">Stake (SOL)</label>
+                <Input
+                  type="number"
+                  min="0.01"
+                  max="1.0"
+                  step="0.01"
+                  value={stakeAmount}
+                  onChange={(e) => setStakeAmount(parseFloat(e.target.value) || 0.01)}
+                  className="rounded-lg border-border/50 bg-muted/50 font-mono text-2xl font-bold text-center"
+                />
                 <p className="text-xs text-muted-foreground mt-1">
                   Winner gets {(stakeAmount * 2 * 0.9).toFixed(4)} SOL (10% fee)
                 </p>
