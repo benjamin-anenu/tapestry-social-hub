@@ -46,6 +46,11 @@ const ChickenDeposit = ({
         })
       );
 
+      // Explicitly set blockhash + feePayer for mobile wallet compatibility
+      const { blockhash } = await connection.getLatestBlockhash("confirmed");
+      transaction.recentBlockhash = blockhash;
+      transaction.feePayer = publicKey;
+
       setVerifyStatus("Sending transaction...");
       const signature = await sendTransaction(transaction, connection);
 

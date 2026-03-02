@@ -9,6 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription,
 } from "@/components/ui/drawer";
+import ChickenChallengeAlert from "@/components/chicken/ChickenChallengeAlert";
 
 // Animated typing dots component
 const TypingIndicator = () => (
@@ -302,6 +303,9 @@ const FriendChat = () => {
 
   return (
     <>
+      {myProfileId && walletAddress && (
+        <ChickenChallengeAlert myProfileId={myProfileId} walletAddress={walletAddress} />
+      )}
       {/* LAYER 1: Fixed header — never moves */}
       <div className="fixed top-0 left-0 right-0 z-50 flex items-center gap-3 border-b border-border/50 bg-card/80 px-4 py-3 backdrop-blur-sm h-14">
         <Button variant="ghost" size="icon" onClick={() => navigate("/play/friends")} className="shrink-0">
