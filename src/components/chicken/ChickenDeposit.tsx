@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import { motion } from "framer-motion";
 import { Loader2, Check, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useWallet } from "@solana/wallet-adapter-react";
-import { Connection, PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
+import { useWallet, useConnection } from "@solana/wallet-adapter-react";
+import { PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
 import { supabase } from "@/integrations/supabase/client";
 
 interface ChickenDepositProps {
@@ -15,6 +15,38 @@ interface ChickenDepositProps {
   onDeposited: () => void;
 }
 
+const SIGNATURE_MISSING_PATTERNS = [
+  "missing signature",
+  "signature verification failed",
+  "transaction signature",
+  "user rejected",
+];
+
+function isSignatureMissingError(msg: string): boolean {
+  const lower = msg.toLowerCase();
+  return SIGNATURE_MISSING_PATTERNS.some((p) => lower.includes(p));
+}
+
+function humanizeError(raw: string, walletName?: string): string {
+  const lower = raw.toLowerCase();
+
+  if (lower.includes("missing signature") || lower.includes("signature verification failed")) {
+    return "Wallet did not sign the transaction. Please open your wallet app and approve again. If this persists on mobile, open the game inside Phantom/Solflare in-app browser.";
+  }
+  if (lower.includes("user rejected") || lower.includes("user denied") || lower.includes("cancelled")) {
+    return "You cancelled the transaction. Tap DEPOSIT again when ready.";
+  }
+  if (lower.includes("insufficient funds") || lower.includes("insufficient lamports")) {
+    return "Not enough SOL in your wallet to cover the stake + network fee.";
+  }
+  if (lower.includes("blockhash not found") || lower.includes("block height exceeded")) {
+    return "Transaction expired. Please try again.";
+  }
+
+  const walletHint = walletName ? ` (connected via ${walletName})` : "";
+  return `${raw}${walletHint}`;
+}
+
 const ChickenDeposit = ({
   gameId,
   stakeAmount,
@@ -23,48 +55,114 @@ const ChickenDeposit = ({
   opponentDeposited,
   onDeposited,
 }: ChickenDepositProps) => {
-  const { publicKey, sendTransaction } = useWallet();
+  const { publicKey, sendTransaction, wallet } = useWallet();
+  const { connection } = useConnection();
   const [depositing, setDepositing] = useState(false);
   const [verifyStatus, setVerifyStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const initialPubkeyRef = useRef<string | null>(null);
+
+  const buildTransaction = useCallback(async () => {
+    if (!publicKey) throw new Error("Wallet not connected");
+
+    const lamports = Math.round(stakeAmount * 1_000_000_000);
+    const transaction = new Transaction().add(
+      SystemProgram.transfer({
+        fromPubkey: publicKey,
+        toPubkey: new PublicKey(escrowPublicKey),
+        lamports,
+      })
+    );
+
+    const { blockhash, lastValidBlockHeight } =
+      await connection.getLatestBlockhash("confirmed");
+    transaction.recentBlockhash = blockhash;
+    transaction.feePayer = publicKey;
+
+    return { transaction, lastValidBlockHeight, blockhash };
+  }, [publicKey, stakeAmount, escrowPublicKey, connection]);
+
+  const attemptSend = useCallback(async (): Promise<string> => {
+    if (!publicKey || !sendTransaction) {
+      throw new Error("Wallet not connected");
+    }
+
+    // Account consistency check
+    const currentKey = publicKey.toBase58();
+    if (initialPubkeyRef.current && initialPubkeyRef.current !== currentKey) {
+      throw new Error(
+        "Connected wallet account changed. Reconnect using the same account used for this game."
+      );
+    }
+    initialPubkeyRef.current = currentKey;
+
+    const { transaction, lastValidBlockHeight, blockhash } = await buildTransaction();
+
+    const signature = await sendTransaction(transaction, connection, {
+      skipPreflight: false,
+      preflightCommitment: "confirmed",
+    });
+
+    await connection.confirmTransaction(
+      { signature, blockhash, lastValidBlockHeight },
+      "confirmed"
+    );
+
+    return signature;
+  }, [publicKey, sendTransaction, connection, buildTransaction]);
 
   const handleDeposit = async () => {
     if (!publicKey || !sendTransaction) return;
     setDepositing(true);
     setError(null);
     setVerifyStatus(null);
+    initialPubkeyRef.current = publicKey.toBase58();
+
+    const walletName = wallet?.adapter?.name;
 
     try {
-      const connection = new Connection("https://api.devnet.solana.com", "confirmed");
-      const lamports = Math.round(stakeAmount * 1_000_000_000);
+      let signature: string;
 
-      const transaction = new Transaction().add(
-        SystemProgram.transfer({
-          fromPubkey: publicKey,
-          toPubkey: new PublicKey(escrowPublicKey),
-          lamports,
-        })
-      );
+      // Stage A: normal send
+      try {
+        setVerifyStatus("Sending transaction...");
+        signature = await attemptSend();
+      } catch (firstErr: unknown) {
+        const firstMsg =
+          firstErr instanceof Error ? firstErr.message : String(firstErr);
 
-      // Explicitly set blockhash + feePayer for mobile wallet compatibility
-      const { blockhash } = await connection.getLatestBlockhash("confirmed");
-      transaction.recentBlockhash = blockhash;
-      transaction.feePayer = publicKey;
+        // If user explicitly rejected, don't retry
+        if (firstMsg.toLowerCase().includes("user rejected") || firstMsg.toLowerCase().includes("cancelled")) {
+          throw firstErr;
+        }
 
-      setVerifyStatus("Sending transaction...");
-      const signature = await sendTransaction(transaction, connection);
+        // Stage B: one-time retry for signature-missing patterns
+        if (isSignatureMissingError(firstMsg)) {
+          setVerifyStatus("Retrying transaction (wallet session refresh)...");
+          try {
+            signature = await attemptSend();
+          } catch (retryErr: unknown) {
+            const retryMsg =
+              retryErr instanceof Error ? retryErr.message : String(retryErr);
+            throw new Error(humanizeError(retryMsg, walletName));
+          }
+        } else {
+          throw firstErr;
+        }
+      }
 
-      setVerifyStatus("Waiting for on-chain confirmation...");
-      await connection.confirmTransaction(signature, "confirmed");
-
+      // Verify with backend
       setVerifyStatus("Verifying deposit with server...");
-      const { data, error: fnErr } = await supabase.functions.invoke("chicken-deposit", {
-        body: {
-          gameId,
-          walletAddress: publicKey.toBase58(),
-          txSignature: signature,
-        },
-      });
+      const { data, error: fnErr } = await supabase.functions.invoke(
+        "chicken-deposit",
+        {
+          body: {
+            gameId,
+            walletAddress: publicKey.toBase58(),
+            txSignature: signature,
+          },
+        }
+      );
 
       if (fnErr) throw new Error(fnErr.message);
       if (data?.error) throw new Error(data.error);
@@ -72,8 +170,8 @@ const ChickenDeposit = ({
       setVerifyStatus(null);
       onDeposited();
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Deposit failed";
-      setError(message);
+      const raw = err instanceof Error ? err.message : "Deposit failed";
+      setError(humanizeError(raw, walletName));
       setVerifyStatus(null);
     } finally {
       setDepositing(false);
@@ -146,9 +244,9 @@ const ChickenDeposit = ({
       )}
 
       {error && (
-        <div className="flex items-center gap-2 text-sm text-destructive">
-          <AlertCircle className="h-4 w-4" />
-          {error}
+        <div className="flex items-center gap-2 text-sm text-destructive max-w-xs text-center">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          <span>{error}</span>
         </div>
       )}
 
