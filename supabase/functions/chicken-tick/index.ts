@@ -6,6 +6,63 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Box-Muller transform for normal distribution
+function randomNormal(): number {
+  let u = 0, v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+}
+
+interface Candle {
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+}
+
+function generateNextCandle(history: Candle[], tickIndex: number): Candle {
+  const prevPrice = history.length > 0 ? history[history.length - 1].close : 100;
+
+  // Volatility: base 3%, occasional spikes
+  let volatility = 0.03;
+  if (Math.random() < 0.08) volatility = 0.12 + Math.random() * 0.1; // 8% chance of big move
+  if (Math.random() < 0.03) volatility = 0.2 + Math.random() * 0.15; // 3% chance of huge wick
+
+  // Momentum: 30% chance to continue previous direction
+  let momentum = 0;
+  if (history.length >= 2) {
+    const prevMove = history[history.length - 1].close - history[history.length - 2].close;
+    if (Math.random() < 0.3) momentum = Math.sign(prevMove) * 0.01;
+  }
+
+  // Mean reversion toward 100
+  const meanReversion = (100 - prevPrice) * 0.005;
+
+  // Base drift
+  const drift = 0.001;
+
+  const change = drift + momentum + meanReversion + volatility * randomNormal();
+  const closePrice = Math.max(1, prevPrice * (1 + change));
+
+  // Generate realistic OHLC
+  const open = prevPrice;
+  const mid1 = open + (closePrice - open) * (0.3 + Math.random() * 0.4);
+  const wickUp = Math.abs(randomNormal()) * volatility * prevPrice * 0.5;
+  const wickDown = Math.abs(randomNormal()) * volatility * prevPrice * 0.5;
+  const high = Math.max(open, closePrice, mid1) + wickUp;
+  const low = Math.max(1, Math.min(open, closePrice, mid1) - wickDown);
+
+  return {
+    time: tickIndex,
+    open: Math.round(open * 100) / 100,
+    high: Math.round(high * 100) / 100,
+    low: Math.round(low * 100) / 100,
+    close: Math.round(closePrice * 100) / 100,
+  };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -20,7 +77,6 @@ serve(async (req) => {
     const { gameId } = await req.json();
     if (!gameId) throw new Error("gameId is required");
 
-    // Get the game
     const { data: game, error: gameErr } = await supabase
       .from("chicken_games")
       .select("*")
@@ -30,59 +86,105 @@ serve(async (req) => {
     if (gameErr || !game) throw new Error("Game not found");
     if (game.status !== "active") {
       return new Response(
-        JSON.stringify({ counter: game.counter, status: game.status }),
+        JSON.stringify({ price_history: game.price_history, status: game.status, counter: game.counter }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Anti-spam: only increment if at least 800ms have passed since started_at + (counter * 1000ms)
+    // Anti-spam: at least 800ms per tick
     const startedAt = new Date(game.started_at).getTime();
     const expectedTime = startedAt + game.counter * 1000;
     const now = Date.now();
-
     if (now < expectedTime + 800) {
-      // Too soon, return current state
       return new Response(
-        JSON.stringify({ counter: game.counter, status: game.status }),
+        JSON.stringify({ price_history: game.price_history, status: game.status, counter: game.counter }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
     const newCounter = game.counter + 1;
+    const history: Candle[] = Array.isArray(game.price_history) ? game.price_history : [];
+    const newCandle = generateNextCandle(history, newCounter);
+    const newHistory = [...history, newCandle];
 
-    if (newCounter >= 100) {
-      // Both lose - mutual destruction
-      const { error: updateErr } = await supabase
+    // Game over at 60 ticks
+    if (newCounter >= game.game_duration) {
+      const finalPrice = newCandle.close;
+      const aValue = Number(game.player_a_cash) + Number(game.player_a_tokens) * finalPrice;
+      const bValue = Number(game.player_b_cash) + Number(game.player_b_tokens) * finalPrice;
+
+      let winnerId: string | null = null;
+      let result = "mutual_destruction";
+      if (aValue > bValue) {
+        winnerId = game.player_a_id;
+        result = "winner_a";
+      } else if (bValue > aValue) {
+        winnerId = game.player_b_id;
+        result = "winner_b";
+      }
+
+      await supabase
         .from("chicken_games")
         .update({
-          counter: 100,
+          counter: newCounter,
+          price_history: newHistory,
           status: "finished",
           ended_at: new Date().toISOString(),
-          // winner_id stays null = both lose, platform keeps pot
+          winner_id: winnerId,
+          cashed_out_at: newCounter,
         })
         .eq("id", gameId)
         .eq("status", "active");
 
-      if (updateErr) throw updateErr;
+      // If there's a winner, trigger payout
+      if (winnerId) {
+        const { data: winnerProfile } = await supabase
+          .from("profiles")
+          .select("wallet_address")
+          .eq("id", winnerId)
+          .single();
+
+        if (winnerProfile) {
+          try {
+            // Fire and forget payout via cashout function logic
+            await supabase.functions.invoke("chicken-cashout", {
+              body: { gameId, walletAddress: winnerProfile.wallet_address, autoFinish: true },
+            });
+          } catch (e) {
+            console.error("Auto-payout failed:", e);
+          }
+        }
+      }
 
       return new Response(
-        JSON.stringify({ counter: 100, status: "finished", result: "mutual_destruction" }),
+        JSON.stringify({
+          counter: newCounter,
+          status: "finished",
+          result,
+          price_history: newHistory,
+          player_a_value: Math.round(aValue * 100) / 100,
+          player_b_value: Math.round(bValue * 100) / 100,
+          winner_id: winnerId,
+        }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Normal tick
+    // Normal tick - generate price candle
     const { error: updateErr } = await supabase
       .from("chicken_games")
-      .update({ counter: newCounter })
+      .update({
+        counter: newCounter,
+        price_history: newHistory,
+      })
       .eq("id", gameId)
       .eq("status", "active")
-      .eq("counter", game.counter); // Optimistic lock to prevent double-tick
+      .eq("counter", game.counter); // Optimistic lock
 
     if (updateErr) throw updateErr;
 
     return new Response(
-      JSON.stringify({ counter: newCounter, status: "active" }),
+      JSON.stringify({ counter: newCounter, status: "active", price_history: newHistory }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {

@@ -25,6 +25,8 @@ interface ResultData {
   payout?: number;
   payoutTx?: string | null;
   cashedOutAt?: number;
+  myValue?: number;
+  oppValue?: number;
 }
 
 const Chicken = () => {
@@ -237,6 +239,8 @@ const Chicken = () => {
         payout: data?.payout as number | undefined,
         payoutTx: data?.payoutTx as string | null | undefined,
         cashedOutAt: data?.cashedOutAt as number | undefined,
+        myValue: data?.myValue as number | undefined,
+        oppValue: data?.oppValue as number | undefined,
       });
       setPhase("result");
     },
@@ -290,13 +294,15 @@ const Chicken = () => {
                 <Flame className="h-20 w-20 text-orange-500" />
               </motion.div>
               <h1 className="font-display text-3xl font-black">
-                THE ULTIMATE NERVE GAME
+                60-SECOND TRADING BATTLE
               </h1>
               <p className="max-w-sm text-muted-foreground">
-                A counter climbs from 1 to 100. Cash out first and you{" "}
-                <span className="font-bold text-primary">WIN the pot</span>. Wait too
-                long and you{" "}
-                <span className="font-bold text-destructive">LOSE EVERYTHING</span>.
+                Trade <span className="font-bold text-primary">$CHKN</span> on a live
+                market chart. Buy low, sell high. Highest portfolio value when the timer
+                hits zero{" "}
+                <span className="font-bold text-primary">WINS the SOL pot</span>. Loser
+                is the{" "}
+                <span className="font-bold text-destructive">CHICKEN 🐔</span>.
               </p>
 
               <div className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4">
@@ -426,6 +432,8 @@ const Chicken = () => {
                 payoutTx={resultData.payoutTx}
                 cashedOutAt={resultData.cashedOutAt}
                 stakeAmount={stakeAmount}
+                myValue={resultData.myValue}
+                oppValue={resultData.oppValue}
                 onPlayAgain={handlePlayAgain}
               />
             </motion.div>

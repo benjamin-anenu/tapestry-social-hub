@@ -52,15 +52,23 @@ export type Database = {
           counter: number
           created_at: string
           ended_at: string | null
+          game_duration: number
           id: string
           payout_tx: string | null
           platform_fee: number
+          player_a_cash: number
           player_a_deposited: boolean
           player_a_id: string
+          player_a_tokens: number
+          player_a_trades: Json
           player_a_tx: string | null
+          player_b_cash: number
           player_b_deposited: boolean
           player_b_id: string | null
+          player_b_tokens: number
+          player_b_trades: Json
           player_b_tx: string | null
+          price_history: Json
           stake_amount: number
           started_at: string | null
           status: string
@@ -73,15 +81,23 @@ export type Database = {
           counter?: number
           created_at?: string
           ended_at?: string | null
+          game_duration?: number
           id?: string
           payout_tx?: string | null
           platform_fee?: number
+          player_a_cash?: number
           player_a_deposited?: boolean
           player_a_id: string
+          player_a_tokens?: number
+          player_a_trades?: Json
           player_a_tx?: string | null
+          player_b_cash?: number
           player_b_deposited?: boolean
           player_b_id?: string | null
+          player_b_tokens?: number
+          player_b_trades?: Json
           player_b_tx?: string | null
+          price_history?: Json
           stake_amount?: number
           started_at?: string | null
           status?: string
@@ -94,15 +110,23 @@ export type Database = {
           counter?: number
           created_at?: string
           ended_at?: string | null
+          game_duration?: number
           id?: string
           payout_tx?: string | null
           platform_fee?: number
+          player_a_cash?: number
           player_a_deposited?: boolean
           player_a_id?: string
+          player_a_tokens?: number
+          player_a_trades?: Json
           player_a_tx?: string | null
+          player_b_cash?: number
           player_b_deposited?: boolean
           player_b_id?: string | null
+          player_b_tokens?: number
+          player_b_trades?: Json
           player_b_tx?: string | null
+          price_history?: Json
           stake_amount?: number
           started_at?: string | null
           status?: string
