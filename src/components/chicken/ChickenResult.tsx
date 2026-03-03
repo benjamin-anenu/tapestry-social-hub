@@ -8,6 +8,8 @@ interface ChickenResultProps {
   payoutTx?: string | null;
   cashedOutAt?: number;
   stakeAmount: number;
+  myValue?: number;
+  oppValue?: number;
   onPlayAgain: () => void;
 }
 
@@ -15,10 +17,14 @@ const ChickenResult = ({
   result,
   payout,
   payoutTx,
-  cashedOutAt,
   stakeAmount,
+  myValue,
+  oppValue,
   onPlayAgain,
 }: ChickenResultProps) => {
+  const potTotal = stakeAmount * 2;
+  const winnings = potTotal * 0.9;
+
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.8 }}
@@ -35,15 +41,27 @@ const ChickenResult = ({
             <Trophy className="h-24 w-24 text-yellow-400" />
           </motion.div>
           <h1 className="font-display text-4xl font-black text-foreground">
-            YOU WIN! 🎉
+            TRADING LEGEND! 🏆
           </h1>
           <p className="text-lg text-muted-foreground">
-            You cashed out at <span className="font-bold text-primary">{cashedOutAt}</span>
+            You outtraded your opponent
           </p>
+          {myValue !== undefined && oppValue !== undefined && (
+            <div className="flex gap-4 w-full max-w-xs">
+              <div className="flex-1 rounded-lg border border-green-500/30 bg-green-500/10 p-3">
+                <p className="text-[10px] text-muted-foreground">YOU</p>
+                <p className="font-mono text-lg font-bold text-green-500">${myValue.toFixed(2)}</p>
+              </div>
+              <div className="flex-1 rounded-lg border border-red-500/30 bg-red-500/10 p-3">
+                <p className="text-[10px] text-muted-foreground">OPPONENT</p>
+                <p className="font-mono text-lg font-bold text-red-500">${oppValue.toFixed(2)}</p>
+              </div>
+            </div>
+          )}
           <div className="rounded-xl border border-primary/30 bg-primary/10 px-6 py-4">
             <p className="text-sm text-muted-foreground">Payout</p>
             <p className="font-mono text-3xl font-bold text-primary">
-              {payout?.toFixed(4)} SOL
+              {payout?.toFixed(4) || winnings.toFixed(4)} SOL
             </p>
           </div>
           {payoutTx && (
@@ -71,8 +89,20 @@ const ChickenResult = ({
             🐔 CHICKEN! 🐔
           </h1>
           <p className="text-lg text-muted-foreground">
-            Your opponent cashed out first
+            Your opponent outtraded you
           </p>
+          {myValue !== undefined && oppValue !== undefined && (
+            <div className="flex gap-4 w-full max-w-xs">
+              <div className="flex-1 rounded-lg border border-red-500/30 bg-red-500/10 p-3">
+                <p className="text-[10px] text-muted-foreground">YOU</p>
+                <p className="font-mono text-lg font-bold text-red-500">${myValue.toFixed(2)}</p>
+              </div>
+              <div className="flex-1 rounded-lg border border-green-500/30 bg-green-500/10 p-3">
+                <p className="text-[10px] text-muted-foreground">OPPONENT</p>
+                <p className="font-mono text-lg font-bold text-green-500">${oppValue.toFixed(2)}</p>
+              </div>
+            </div>
+          )}
           <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-6 py-4">
             <p className="text-sm text-muted-foreground">You lost</p>
             <p className="font-mono text-3xl font-bold text-destructive">
@@ -91,10 +121,10 @@ const ChickenResult = ({
             <Flame className="h-24 w-24 text-orange-500" />
           </motion.div>
           <h1 className="font-display text-4xl font-black text-orange-500">
-            💀 MUTUAL DESTRUCTION 💀
+            💀 PERFECT TIE 💀
           </h1>
           <p className="text-lg text-muted-foreground">
-            Neither of you cashed out. Counter hit 100.
+            Identical portfolio values. Both lose.
           </p>
           <div className="rounded-xl border border-orange-500/30 bg-orange-500/10 px-6 py-4">
             <p className="text-sm text-muted-foreground">Both lost</p>
@@ -106,7 +136,7 @@ const ChickenResult = ({
       )}
 
       <Button onClick={onPlayAgain} size="lg" className="mt-4 w-full max-w-xs text-lg font-bold">
-        PLAY AGAIN
+        TRADE AGAIN
       </Button>
     </motion.div>
   );

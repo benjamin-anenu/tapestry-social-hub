@@ -1,7 +1,17 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
+import ChickenChart from "./ChickenChart";
+import ChickenPortfolio from "./ChickenPortfolio";
+
+interface Candle {
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+}
 
 interface ChickenGameProps {
   gameId: string;
@@ -19,16 +29,24 @@ const ChickenGame = ({
   onGameEnd,
 }: ChickenGameProps) => {
   const [counter, setCounter] = useState(0);
-  const [youIn, setYouIn] = useState(true);
-  const [theyIn, setTheyIn] = useState(true);
-  const [cashingOut, setCashingOut] = useState(false);
+  const [priceHistory, setPriceHistory] = useState<Candle[]>([]);
+  const [myCash, setMyCash] = useState(1000);
+  const [myTokens, setMyTokens] = useState(0);
+  const [oppValue, setOppValue] = useState(1000);
+  const [trading, setTrading] = useState(false);
+  const [gameDuration, setGameDuration] = useState(60);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const gameEndedRef = useRef(false);
+
+  const currentPrice = priceHistory.length > 0 ? priceHistory[priceHistory.length - 1].close : 100;
+  const myValue = Math.round((myCash + myTokens * currentPrice) * 100) / 100;
+  const pnl = Math.round((myValue - 1000) * 100) / 100;
+  const timeLeft = Math.max(0, gameDuration - counter);
 
   // Subscribe to realtime updates
   useEffect(() => {
     const channel = supabase
-      .channel(`chicken-${gameId}`)
+      .channel(`chicken-trade-${gameId}`)
       .on(
         "postgres_changes",
         {
@@ -39,19 +57,38 @@ const ChickenGame = ({
         },
         (payload) => {
           const game = payload.new as Record<string, unknown>;
-          setCounter(game.counter as number);
+          const c = game.counter as number;
+          setCounter(c);
+
+          const ph = game.price_history as Candle[];
+          if (Array.isArray(ph)) setPriceHistory(ph);
+
+          const dur = game.game_duration as number;
+          if (dur) setGameDuration(dur);
+
+          // Determine which player we are and update accordingly
+          const isA = game.player_a_id === myProfileId;
+          if (isA) {
+            setMyCash(Number(game.player_a_cash));
+            setMyTokens(Number(game.player_a_tokens));
+            // Opponent value
+            const price = Array.isArray(ph) && ph.length > 0 ? ph[ph.length - 1].close : 100;
+            setOppValue(Math.round((Number(game.player_b_cash) + Number(game.player_b_tokens) * price) * 100) / 100);
+          } else {
+            setMyCash(Number(game.player_b_cash));
+            setMyTokens(Number(game.player_b_tokens));
+            const price = Array.isArray(ph) && ph.length > 0 ? ph[ph.length - 1].close : 100;
+            setOppValue(Math.round((Number(game.player_a_cash) + Number(game.player_a_tokens) * price) * 100) / 100);
+          }
 
           if (game.status === "finished" && !gameEndedRef.current) {
             gameEndedRef.current = true;
-
             if (game.winner_id === null) {
-              onGameEnd("mutual_destruction");
+              onGameEnd("mutual_destruction", { myValue, oppValue });
             } else if (game.winner_id === myProfileId) {
-              // We won - but our cashout handler already handles this
+              onGameEnd("win", { myValue, oppValue });
             } else {
-              // Opponent won
-              setTheyIn(false);
-              onGameEnd("lose");
+              onGameEnd("lose", { myValue, oppValue });
             }
           }
         }
@@ -61,9 +98,9 @@ const ChickenGame = ({
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [gameId, myProfileId, onGameEnd]);
+  }, [gameId, myProfileId, onGameEnd, myValue, oppValue]);
 
-  // Drive the tick from client
+  // Drive ticks
   useEffect(() => {
     tickRef.current = setInterval(async () => {
       if (gameEndedRef.current) return;
@@ -81,141 +118,88 @@ const ChickenGame = ({
     };
   }, [gameId]);
 
-  const handleCashOut = async () => {
-    if (cashingOut || !youIn || gameEndedRef.current) return;
-    setCashingOut(true);
-    setYouIn(false);
-
+  const handleTrade = useCallback(async (action: "buy" | "sell") => {
+    if (trading || gameEndedRef.current) return;
+    setTrading(true);
     try {
-      const { data, error } = await supabase.functions.invoke("chicken-cashout", {
-        body: { gameId, walletAddress },
+      const { data, error } = await supabase.functions.invoke("chicken-trade", {
+        body: { gameId, walletAddress, action },
       });
-
       if (error) throw error;
-
-      if (data?.success && data?.winner) {
-        gameEndedRef.current = true;
-        onGameEnd("win", {
-          payout: data.payout,
-          payoutTx: data.payoutTx,
-          cashedOutAt: data.cashedOutAt,
-        });
-      } else if (data?.error) {
-        // Someone else cashed out first
-        gameEndedRef.current = true;
-        onGameEnd("lose");
+      if (data?.success) {
+        setMyCash(data.cash);
+        setMyTokens(data.tokens);
       }
-    } catch {
-      setYouIn(true);
-      setCashingOut(false);
+    } catch (e) {
+      console.error("Trade failed:", e);
+    } finally {
+      setTrading(false);
     }
-  };
-
-  const getZoneColor = () => {
-    if (counter < 30) return "text-green-500";
-    if (counter < 60) return "text-yellow-500";
-    if (counter < 90) return "text-orange-500";
-    return "text-red-500";
-  };
-
-  const getZoneLabel = () => {
-    if (counter < 30) return "SAFE ZONE";
-    if (counter < 60) return "GETTING RISKY";
-    if (counter < 90) return "DANGER ZONE";
-    return "DEATH ZONE";
-  };
+  }, [trading, gameId, walletAddress]);
 
   const potTotal = stakeAmount * 2;
-  const potAfterFee = potTotal - potTotal * 0.1;
 
   return (
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="flex h-full min-h-[80vh] flex-col items-center justify-center gap-6 p-4"
+      className="flex flex-col gap-3 w-full max-w-lg mx-auto px-2"
     >
-      {/* Counter */}
-      <motion.div
-        key={counter}
-        initial={{ scale: 1.1 }}
-        animate={{ scale: 1 }}
-        className={`font-display text-[120px] font-black leading-none sm:text-[180px] ${getZoneColor()} ${
-          counter >= 90 ? "animate-pulse" : ""
-        }`}
-      >
-        {counter}
-      </motion.div>
-
-      {/* Zone label */}
-      <div className={`text-xl font-bold ${getZoneColor()} ${counter >= 90 ? "animate-pulse" : ""}`}>
-        {getZoneLabel()}
-      </div>
-
-      {/* Player status */}
-      <div className="flex gap-8">
-        <div className="text-center">
-          <p className="text-sm text-muted-foreground mb-1">YOU</p>
-          <p className="text-3xl">{youIn ? "💪" : "🐔"}</p>
-          <p className="text-xs font-mono text-muted-foreground mt-1">
-            {youIn ? "STILL IN" : "CASHED OUT"}
-          </p>
+      {/* Timer + Pot Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground uppercase tracking-wider">$CHKN</span>
+          <span className="font-mono text-xl font-bold text-foreground">
+            ${currentPrice.toFixed(2)}
+          </span>
         </div>
-        <div className="text-center">
-          <p className="text-sm text-muted-foreground mb-1">OPPONENT</p>
-          <p className="text-3xl">{theyIn ? "💪" : "🐔"}</p>
-          <p className="text-xs font-mono text-muted-foreground mt-1">
-            {theyIn ? "STILL IN" : "CASHED OUT"}
-          </p>
+        <div className={`font-mono text-2xl font-black ${timeLeft <= 10 ? "text-destructive animate-pulse" : "text-primary"}`}>
+          {timeLeft}s
         </div>
       </div>
 
-      {/* Cash out button */}
-      {youIn && (
-        <motion.div
-          animate={{ scale: [1, 1.03, 1] }}
-          transition={{ duration: 1.5, repeat: Infinity }}
-          className="w-full max-w-xs"
+      {/* Pot info */}
+      <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <span>POT: {potTotal} SOL</span>
+        <span>Winner gets {(potTotal * 0.9).toFixed(4)} SOL</span>
+      </div>
+
+      {/* Chart */}
+      <div className="rounded-xl border border-border bg-card overflow-hidden" style={{ height: 220 }}>
+        <ChickenChart candles={priceHistory} />
+      </div>
+
+      {/* Portfolio comparison */}
+      <ChickenPortfolio
+        myCash={myCash}
+        myTokens={myTokens}
+        myValue={myValue}
+        pnl={pnl}
+        oppValue={oppValue}
+        currentPrice={currentPrice}
+      />
+
+      {/* Trade buttons */}
+      <div className="grid grid-cols-2 gap-3">
+        <Button
+          onClick={() => handleTrade("buy")}
+          disabled={trading || myCash <= 0}
+          className="h-16 bg-green-600 text-lg font-black hover:bg-green-500 shadow-lg shadow-green-500/30 text-white"
         >
-          <Button
-            onClick={handleCashOut}
-            disabled={cashingOut}
-            size="lg"
-            className="h-20 w-full bg-green-600 text-2xl font-black hover:bg-green-500 shadow-2xl shadow-green-500/50"
-          >
-            {cashingOut ? "CASHING OUT..." : "CASH OUT NOW"}
-          </Button>
-        </motion.div>
-      )}
-
-      {/* Pot */}
-      <div className="text-center mt-4">
-        <p className="text-sm text-muted-foreground">POT</p>
-        <p className="font-mono text-2xl font-bold text-primary">{potTotal} SOL</p>
-        <p className="text-xs text-muted-foreground">Winner gets {potAfterFee.toFixed(4)} SOL</p>
+          {trading ? "..." : "BUY ALL"}
+        </Button>
+        <Button
+          onClick={() => handleTrade("sell")}
+          disabled={trading || myTokens <= 0}
+          className="h-16 bg-red-600 text-lg font-black hover:bg-red-500 shadow-lg shadow-red-500/30 text-white"
+        >
+          {trading ? "..." : "SELL ALL"}
+        </Button>
       </div>
 
-      {/* Progress bar */}
-      <div className="w-full max-w-xs">
-        <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
-          <motion.div
-            className={`h-full rounded-full ${
-              counter < 30
-                ? "bg-green-500"
-                : counter < 60
-                ? "bg-yellow-500"
-                : counter < 90
-                ? "bg-orange-500"
-                : "bg-red-500"
-            }`}
-            style={{ width: `${counter}%` }}
-            transition={{ duration: 0.3 }}
-          />
-        </div>
-        <div className="flex justify-between mt-1">
-          <span className="text-[10px] text-muted-foreground">0</span>
-          <span className="text-[10px] text-red-500 font-bold">100 = DEATH</span>
-        </div>
-      </div>
+      <p className="text-[10px] text-center text-muted-foreground">
+        Buy low, sell high. Highest portfolio value when timer hits 0 wins the SOL pot.
+      </p>
     </motion.div>
   );
 };
