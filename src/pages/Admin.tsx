@@ -21,6 +21,7 @@ import { toast } from "@/hooks/use-toast";
 import AdminUserSearch from "@/components/admin/AdminUserSearch";
 import AdminBulkActions from "@/components/admin/AdminBulkActions";
 import AdminUserRow, { type UserProfile } from "@/components/admin/AdminUserRow";
+import EscrowDashboard from "@/components/admin/EscrowDashboard";
 
 interface BotConfig {
   bot_model: string;
@@ -500,6 +501,9 @@ const Admin = () => {
             </div>
           </CardContent>
         </Card>
+
+        {/* Escrow Wallet Dashboard */}
+        {walletAddress && <EscrowDashboard walletAddress={walletAddress} />}
 
         {/* Users Table */}
         <Card className="border-primary/20 bg-card/60 backdrop-blur">

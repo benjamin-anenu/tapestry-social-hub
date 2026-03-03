@@ -1,10 +1,11 @@
-import { useState, useRef, useCallback } from "react";
-import { motion } from "framer-motion";
-import { Loader2, Check, AlertCircle } from "lucide-react";
+import { useState, useRef, useCallback, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Loader2, Check, AlertCircle, QrCode, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
-import { PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
+import { PublicKey, SystemProgram, Transaction, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import { supabase } from "@/integrations/supabase/client";
+import { QRCodeSVG } from "qrcode.react";
 
 interface ChickenDepositProps {
   gameId: string;
@@ -15,36 +16,23 @@ interface ChickenDepositProps {
   onDeposited: () => void;
 }
 
-const SIGNATURE_MISSING_PATTERNS = [
-  "missing signature",
-  "signature verification failed",
-  "transaction signature",
-  "user rejected",
-];
+const isMobile = () =>
+  /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
-function isSignatureMissingError(msg: string): boolean {
-  const lower = msg.toLowerCase();
-  return SIGNATURE_MISSING_PATTERNS.some((p) => lower.includes(p));
-}
+const isInWalletBrowser = () =>
+  !!(window as any).phantom?.solana?.isPhantom ||
+  !!(window as any).solflare?.isSolflare ||
+  !!(window as any).backpack?.isBackpack;
 
-function humanizeError(raw: string, walletName?: string): string {
+function humanizeError(raw: string): string {
   const lower = raw.toLowerCase();
-
-  if (lower.includes("missing signature") || lower.includes("signature verification failed")) {
-    return "Wallet did not sign the transaction. Please open your wallet app and approve again. If this persists on mobile, open the game inside Phantom/Solflare in-app browser.";
-  }
-  if (lower.includes("user rejected") || lower.includes("user denied") || lower.includes("cancelled")) {
+  if (lower.includes("user rejected") || lower.includes("user denied") || lower.includes("cancelled"))
     return "You cancelled the transaction. Tap DEPOSIT again when ready.";
-  }
-  if (lower.includes("insufficient funds") || lower.includes("insufficient lamports")) {
+  if (lower.includes("insufficient funds") || lower.includes("insufficient lamports"))
     return "Not enough SOL in your wallet to cover the stake + network fee.";
-  }
-  if (lower.includes("blockhash not found") || lower.includes("block height exceeded")) {
+  if (lower.includes("blockhash not found") || lower.includes("block height exceeded"))
     return "Transaction expired. Please try again.";
-  }
-
-  const walletHint = walletName ? ` (connected via ${walletName})` : "";
-  return `${raw}${walletHint}`;
+  return raw;
 }
 
 const ChickenDeposit = ({
@@ -55,128 +43,150 @@ const ChickenDeposit = ({
   opponentDeposited,
   onDeposited,
 }: ChickenDepositProps) => {
-  const { publicKey, signTransaction, wallet } = useWallet();
+  const { publicKey, sendTransaction, wallet } = useWallet();
   const { connection } = useConnection();
   const [depositing, setDepositing] = useState(false);
   const [verifyStatus, setVerifyStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const initialPubkeyRef = useRef<string | null>(null);
+  const [qrMode, setQrMode] = useState(false);
+  const [qrUrl, setQrUrl] = useState<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const buildTransaction = useCallback(async () => {
-    if (!publicKey) throw new Error("Wallet not connected");
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, []);
 
-    const lamports = Math.round(stakeAmount * 1_000_000_000);
-    const transaction = new Transaction().add(
-      SystemProgram.transfer({
-        fromPubkey: publicKey,
-        toPubkey: new PublicKey(escrowPublicKey),
-        lamports,
-      })
-    );
-
-    const { blockhash, lastValidBlockHeight } =
-      await connection.getLatestBlockhash("confirmed");
-    transaction.recentBlockhash = blockhash;
-    transaction.feePayer = publicKey;
-
-    return { transaction, lastValidBlockHeight, blockhash };
-  }, [publicKey, stakeAmount, escrowPublicKey, connection]);
-
-  const attemptSend = useCallback(async (): Promise<string> => {
-    if (!publicKey || !signTransaction) {
-      throw new Error("Wallet not connected");
-    }
-
-    // Account consistency check
-    const currentKey = publicKey.toBase58();
-    if (initialPubkeyRef.current && initialPubkeyRef.current !== currentKey) {
-      throw new Error(
-        "Connected wallet account changed. Reconnect using the same account used for this game."
-      );
-    }
-    initialPubkeyRef.current = currentKey;
-
-    const { transaction, lastValidBlockHeight, blockhash } = await buildTransaction();
-
-    // Two-step: signTransaction triggers the wallet deep link on mobile
-    const signedTx = await signTransaction(transaction);
-
-    const signature = await connection.sendRawTransaction(signedTx.serialize(), {
-      skipPreflight: false,
-      preflightCommitment: "confirmed",
+  const verifyWithBackend = useCallback(async (signature: string) => {
+    setVerifyStatus("Verifying deposit with server...");
+    const { data, error: fnErr } = await supabase.functions.invoke("chicken-deposit", {
+      body: {
+        gameId,
+        walletAddress: publicKey!.toBase58(),
+        txSignature: signature,
+      },
     });
+    if (fnErr) throw new Error(fnErr.message);
+    if (data?.error) throw new Error(data.error);
+    setVerifyStatus(null);
+    onDeposited();
+  }, [gameId, publicKey, onDeposited]);
 
-    await connection.confirmTransaction(
-      { signature, blockhash, lastValidBlockHeight },
-      "confirmed"
-    );
+  const startQrFallback = useCallback(() => {
+    const solanaPayUrl = `solana:${escrowPublicKey}?amount=${stakeAmount}&label=Find60%20Deposit&message=Game%20${gameId.slice(0, 8)}`;
+    setQrUrl(solanaPayUrl);
+    setQrMode(true);
+    setVerifyStatus("Scan the QR code with your wallet app...");
 
-    return signature;
-  }, [publicKey, signTransaction, connection, buildTransaction]);
+    let attempts = 0;
+    pollRef.current = setInterval(async () => {
+      attempts++;
+      if (attempts > 60) {
+        if (pollRef.current) clearInterval(pollRef.current);
+        setError("Deposit timeout — please try again.");
+        setQrMode(false);
+        setDepositing(false);
+        setVerifyStatus(null);
+        return;
+      }
+
+      try {
+        // Check if the game record shows we deposited (another path may have confirmed it)
+        const { data: game } = await supabase
+          .from("chicken_games")
+          .select("player_a_deposited, player_b_deposited, player_a_id")
+          .eq("id", gameId)
+          .single();
+
+        if (!game) return;
+
+        // Determine which player we are
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("id")
+          .eq("wallet_address", publicKey!.toBase58())
+          .single();
+
+        if (!profile) return;
+
+        const isPlayerA = game.player_a_id === profile.id;
+        const deposited = isPlayerA ? game.player_a_deposited : game.player_b_deposited;
+
+        if (deposited) {
+          if (pollRef.current) clearInterval(pollRef.current);
+          setQrMode(false);
+          setVerifyStatus(null);
+          setDepositing(false);
+          onDeposited();
+        }
+      } catch {
+        // continue polling
+      }
+    }, 2000);
+  }, [escrowPublicKey, stakeAmount, gameId, publicKey, onDeposited]);
+
+  const cancelQr = () => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    setQrMode(false);
+    setDepositing(false);
+    setVerifyStatus(null);
+    setError(null);
+  };
 
   const handleDeposit = async () => {
-    if (!publicKey || !signTransaction) return;
+    if (!publicKey || !sendTransaction) return;
     setDepositing(true);
     setError(null);
     setVerifyStatus(null);
-    initialPubkeyRef.current = publicKey.toBase58();
-
-    const walletName = wallet?.adapter?.name;
 
     try {
-      let signature: string;
-
-      // Stage A: normal send
-      try {
-        setVerifyStatus("Sending transaction...");
-        signature = await attemptSend();
-      } catch (firstErr: unknown) {
-        const firstMsg =
-          firstErr instanceof Error ? firstErr.message : String(firstErr);
-
-        // If user explicitly rejected, don't retry
-        if (firstMsg.toLowerCase().includes("user rejected") || firstMsg.toLowerCase().includes("cancelled")) {
-          throw firstErr;
-        }
-
-        // Stage B: one-time retry for signature-missing patterns
-        if (isSignatureMissingError(firstMsg)) {
-          setVerifyStatus("Retrying transaction (wallet session refresh)...");
-          try {
-            signature = await attemptSend();
-          } catch (retryErr: unknown) {
-            const retryMsg =
-              retryErr instanceof Error ? retryErr.message : String(retryErr);
-            throw new Error(humanizeError(retryMsg, walletName));
-          }
-        } else {
-          throw firstErr;
-        }
-      }
-
-      // Verify with backend
-      setVerifyStatus("Verifying deposit with server...");
-      const { data, error: fnErr } = await supabase.functions.invoke(
-        "chicken-deposit",
-        {
-          body: {
-            gameId,
-            walletAddress: publicKey.toBase58(),
-            txSignature: signature,
-          },
-        }
+      const lamports = Math.round(stakeAmount * LAMPORTS_PER_SOL);
+      const transaction = new Transaction().add(
+        SystemProgram.transfer({
+          fromPubkey: publicKey,
+          toPubkey: new PublicKey(escrowPublicKey),
+          lamports,
+        })
       );
 
-      if (fnErr) throw new Error(fnErr.message);
-      if (data?.error) throw new Error(data.error);
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+      transaction.recentBlockhash = blockhash;
+      transaction.feePayer = publicKey;
 
-      setVerifyStatus(null);
-      onDeposited();
+      // Primary: sendTransaction (handles MWA internally)
+      try {
+        setVerifyStatus("Sending transaction...");
+        const signature = await sendTransaction(transaction, connection);
+
+        setVerifyStatus("Confirming on-chain...");
+        await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed");
+
+        await verifyWithBackend(signature);
+        return;
+      } catch (sendErr: unknown) {
+        const msg = sendErr instanceof Error ? sendErr.message : String(sendErr);
+
+        // User explicitly rejected — don't fallback
+        if (msg.toLowerCase().includes("user rejected") || msg.toLowerCase().includes("cancelled")) {
+          throw sendErr;
+        }
+
+        // On mobile PWA (not in-wallet browser), fall back to QR
+        if (isMobile() && !isInWalletBrowser()) {
+          console.warn("sendTransaction failed on mobile, falling back to QR:", msg);
+          startQrFallback();
+          return;
+        }
+
+        // Desktop failure — just throw
+        throw sendErr;
+      }
     } catch (err: unknown) {
       const raw = err instanceof Error ? err.message : "Deposit failed";
-      setError(humanizeError(raw, walletName));
+      setError(humanizeError(raw));
       setVerifyStatus(null);
-    } finally {
       setDepositing(false);
     }
   };
@@ -221,23 +231,49 @@ const ChickenDeposit = ({
         </div>
       </div>
 
-      {!myDeposited && (
-        <Button
-          onClick={handleDeposit}
-          disabled={depositing}
-          size="lg"
-          className="w-full max-w-xs text-lg font-bold"
-        >
-          {depositing ? (
-            <>
-              <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-              Depositing...
-            </>
-          ) : (
-            `DEPOSIT ${stakeAmount} SOL`
-          )}
-        </Button>
-      )}
+      <AnimatePresence mode="wait">
+        {qrMode && qrUrl ? (
+          <motion.div
+            key="qr"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="flex flex-col items-center gap-4 w-full max-w-xs"
+          >
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <QrCode className="h-4 w-4" />
+              <span>Scan with your Solana wallet</span>
+            </div>
+            <div className="bg-white p-4 rounded-xl">
+              <QRCodeSVG value={qrUrl} size={200} level="M" />
+            </div>
+            <p className="text-xs text-muted-foreground text-center font-mono">
+              Open Phantom or Solflare → Scan → Approve
+            </p>
+            <Button variant="ghost" size="sm" onClick={cancelQr} className="gap-2 text-muted-foreground">
+              <X className="h-4 w-4" /> Cancel
+            </Button>
+          </motion.div>
+        ) : !myDeposited ? (
+          <motion.div key="btn" initial={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <Button
+              onClick={handleDeposit}
+              disabled={depositing}
+              size="lg"
+              className="w-full max-w-xs text-lg font-bold"
+            >
+              {depositing ? (
+                <>
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                  Depositing...
+                </>
+              ) : (
+                `DEPOSIT ${stakeAmount} SOL`
+              )}
+            </Button>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
       {verifyStatus && (
         <div className="flex items-center gap-2 text-sm text-muted-foreground animate-pulse">
