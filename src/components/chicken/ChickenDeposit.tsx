@@ -55,7 +55,7 @@ const ChickenDeposit = ({
   opponentDeposited,
   onDeposited,
 }: ChickenDepositProps) => {
-  const { publicKey, sendTransaction, wallet } = useWallet();
+  const { publicKey, signTransaction, wallet } = useWallet();
   const { connection } = useConnection();
   const [depositing, setDepositing] = useState(false);
   const [verifyStatus, setVerifyStatus] = useState<string | null>(null);
@@ -83,7 +83,7 @@ const ChickenDeposit = ({
   }, [publicKey, stakeAmount, escrowPublicKey, connection]);
 
   const attemptSend = useCallback(async (): Promise<string> => {
-    if (!publicKey || !sendTransaction) {
+    if (!publicKey || !signTransaction) {
       throw new Error("Wallet not connected");
     }
 
@@ -98,7 +98,10 @@ const ChickenDeposit = ({
 
     const { transaction, lastValidBlockHeight, blockhash } = await buildTransaction();
 
-    const signature = await sendTransaction(transaction, connection, {
+    // Two-step: signTransaction triggers the wallet deep link on mobile
+    const signedTx = await signTransaction(transaction);
+
+    const signature = await connection.sendRawTransaction(signedTx.serialize(), {
       skipPreflight: false,
       preflightCommitment: "confirmed",
     });
@@ -109,10 +112,10 @@ const ChickenDeposit = ({
     );
 
     return signature;
-  }, [publicKey, sendTransaction, connection, buildTransaction]);
+  }, [publicKey, signTransaction, connection, buildTransaction]);
 
   const handleDeposit = async () => {
-    if (!publicKey || !sendTransaction) return;
+    if (!publicKey || !signTransaction) return;
     setDepositing(true);
     setError(null);
     setVerifyStatus(null);
