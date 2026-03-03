@@ -1,66 +1,37 @@
 
-I traced the current deposit path and the failure point is clearly on the client side, before backend verification:
 
-- `src/components/chicken/ChickenDeposit.tsx` sends the Solana transaction first, then calls backend function `chicken-deposit`.
-- The backend function logs show no `chicken-deposit` invocations during this failure window.
-- The specific error (`Missing signature for public key [...]`) means the transaction payload reached send flow without a valid signer signature for the payer key.
+## Fix: Mobile Wallet Not Opening for Transaction Signing
 
-This is usually one of two mobile wallet issues:
-1) wallet adapter handoff bug (wallet never signs or returns unsigned payload), or  
-2) account/session mismatch (app thinks account A is connected, wallet signs/opens with account B or stale session).
+### Problem
+The current deposit flow uses `sendTransaction(transaction, connection)` which bundles signing + sending into one call. On mobile, the Mobile Wallet Adapter often fails to trigger the deep link that opens the wallet app for approval. This is why **connecting** works (it uses a different adapter method that triggers the deep link) but **depositing** does not.
 
-Planned implementation to make this robust:
+### Solution
+Switch from `sendTransaction` to `signTransaction` + `sendRawTransaction` -- the same two-step pattern that the wallet connect flow uses internally. This explicitly triggers the wallet's deep link/popup for signing, then sends the already-signed transaction separately.
 
-## 1) Harden the deposit signing flow in `ChickenDeposit.tsx`
-- Stop creating a separate `new Connection(...)` inside the component.
-- Use wallet provider connection (`useConnection`) so signing/sending use the same RPC context as the connected wallet adapter.
-- Build a fresh transaction immediately before send (no reused tx object).
-- Use blockhash + lastValidBlockHeight confirmation flow (not just string signature confirmation) for deterministic confirmation behavior.
+### Changes
 
-## 2) Add two-stage transaction submission strategy (mobile-safe)
-- Stage A: normal send via wallet adapter `sendTransaction(...)` with explicit options.
-- Stage B (automatic one-time retry): if error matches signature-missing patterns, force a wallet session refresh and retry once with a newly built transaction.
-- If retry still fails, surface a specific “wallet did not sign transaction” message instead of generic failure.
+**File: `src/components/chicken/ChickenDeposit.tsx`**
 
-This avoids infinite retries and gives a predictable fallback for flaky mobile adapter sessions.
+1. Pull `signTransaction` from `useWallet()` instead of (or alongside) `sendTransaction`
+2. Replace the `attemptSend` logic:
+   - Build the transaction (unchanged)
+   - Call `signTransaction(transaction)` -- this is the call that opens the wallet app on mobile for approval
+   - Send the signed result via `connection.sendRawTransaction(signedTx.serialize())`
+   - Confirm with blockhash/lastValidBlockHeight (unchanged)
+3. Update the guard check in `handleDeposit` to check for `signTransaction` availability
+4. Keep the retry logic and humanized error messages as-is
 
-## 3) Add signer/account consistency checks before send
-- Right before building tx, verify the currently connected public key is present and stable.
-- If wallet account changes during the flow, abort with a clear message to reconnect with the same account used to join the game.
-- Include the connected wallet name in error output for easier support/debugging.
-
-## 4) Improve wallet provider configuration for mobile reliability in `src/providers/WalletProvider.tsx`
-- Keep current wallets, but configure adapters with explicit network where supported (especially Solflare) to reduce mobile/deeplink ambiguity.
-- Keep auto-connect behavior, but handle stale-session recovery in deposit flow (instead of breaking global app behavior).
-
-## 5) Improve user-facing error messages in `ChickenDeposit.tsx`
-Replace raw cryptic RPC errors with actionable messages:
-- “Wallet signature was not attached. Please open your wallet app and approve again.”
-- “Connected wallet account changed. Reconnect using the same account used for this game.”
-- “If this persists on mobile browser, open the game directly inside Phantom/Solflare in-app browser.”
-
-## 6) Validation plan (end-to-end)
-After implementing, test this exact matrix:
+### Technical Detail
 
 ```text
-Desktop:
-- Phantom extension: deposit should sign once and call chicken-deposit function.
+BEFORE (broken on mobile):
+  sendTransaction(tx, connection)  -->  adapter tries to sign+send internally
+                                        mobile deep link often fails silently
 
-Mobile:
-- Phantom in-app browser: deposit should trigger approval and succeed.
-- Solflare in-app browser: same expected behavior.
-- If wallet fails to sign, retry path should run once and then show actionable error.
-
-Verification:
-- Confirm chicken-deposit backend logs appear after successful signature.
-- Confirm no silent stuck state on “Sending transaction...”.
+AFTER (fix):
+  signTransaction(tx)              -->  triggers wallet app open / approval popup
+  connection.sendRawTransaction()  -->  sends the already-signed bytes to RPC
 ```
 
-## Files to update
-- `src/components/chicken/ChickenDeposit.tsx` (primary fix: robust send/retry/error mapping)
-- `src/providers/WalletProvider.tsx` (adapter config hardening)
+This is a minimal, targeted change -- only the send method in `attemptSend` changes. All retry logic, error handling, backend verification, and UI remain identical.
 
-## Expected outcome
-- Deposits no longer fail silently with raw “missing signature” in common mobile cases.
-- When wallet-side signing truly fails, users get precise guidance instead of ambiguous errors.
-- Backend verification remains unchanged and is only reached after a valid on-chain signature.
