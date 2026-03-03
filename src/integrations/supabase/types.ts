@@ -54,6 +54,7 @@ export type Database = {
           ended_at: string | null
           game_duration: number
           id: string
+          payout_error: string | null
           payout_tx: string | null
           platform_fee: number
           player_a_cash: number
@@ -83,6 +84,7 @@ export type Database = {
           ended_at?: string | null
           game_duration?: number
           id?: string
+          payout_error?: string | null
           payout_tx?: string | null
           platform_fee?: number
           player_a_cash?: number
@@ -112,6 +114,7 @@ export type Database = {
           ended_at?: string | null
           game_duration?: number
           id?: string
+          payout_error?: string | null
           payout_tx?: string | null
           platform_fee?: number
           player_a_cash?: number

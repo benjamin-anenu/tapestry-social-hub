@@ -1,0 +1,1 @@
+ALTER TABLE public.chicken_games ADD COLUMN IF NOT EXISTS payout_error text;
