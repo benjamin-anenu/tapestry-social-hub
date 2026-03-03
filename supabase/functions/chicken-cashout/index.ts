@@ -126,17 +126,32 @@ serve(async (req) => {
 
     // autoFinish: called by chicken-tick when trading battle ends
     if (autoFinish) {
-      const { data: game } = await supabase
-        .from("chicken_games")
-        .select("*")
-        .eq("id", gameId)
-        .eq("status", "finished")
-        .eq("winner_id", profile.id)
-        .single();
+      // Fetch game without filtering by status/winner to avoid race condition
+      let game = null;
+      {
+        const { data } = await supabase
+          .from("chicken_games")
+          .select("*")
+          .eq("id", gameId)
+          .single();
+        game = data;
+      }
 
-      if (!game) {
+      // If game hasn't propagated to "finished" yet, retry once after 500ms
+      if (game && game.status !== "finished") {
+        await new Promise((r) => setTimeout(r, 500));
+        const { data } = await supabase
+          .from("chicken_games")
+          .select("*")
+          .eq("id", gameId)
+          .single();
+        game = data;
+      }
+
+      if (!game || game.status !== "finished" || game.winner_id !== profile.id) {
+        const reason = !game ? "Game not found" : game.status !== "finished" ? `Game status is ${game.status}` : "You are not the winner";
         return new Response(
-          JSON.stringify({ error: "Game not found or you're not the winner" }),
+          JSON.stringify({ error: reason }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
@@ -152,10 +167,14 @@ serve(async (req) => {
       try {
         payoutTx = await sendPayout(walletAddress, payoutLamports);
         if (payoutTx) {
-          await supabase.from("chicken_games").update({ payout_tx: payoutTx }).eq("id", gameId);
+          await supabase.from("chicken_games").update({ payout_tx: payoutTx, payout_error: null }).eq("id", gameId);
+        } else {
+          await supabase.from("chicken_games").update({ payout_error: "sendPayout returned null (tx rejected)" }).eq("id", gameId);
         }
       } catch (e) {
-        console.error("Auto payout failed:", e);
+        const errMsg = e instanceof Error ? e.message : String(e);
+        console.error("Auto payout failed:", errMsg);
+        await supabase.from("chicken_games").update({ payout_error: errMsg }).eq("id", gameId);
       }
 
       return new Response(
@@ -215,10 +234,14 @@ serve(async (req) => {
     try {
       payoutTx = await sendPayout(walletAddress, payoutLamports);
       if (payoutTx) {
-        await supabase.from("chicken_games").update({ payout_tx: payoutTx }).eq("id", gameId);
+        await supabase.from("chicken_games").update({ payout_tx: payoutTx, payout_error: null }).eq("id", gameId);
+      } else {
+        await supabase.from("chicken_games").update({ payout_error: "sendPayout returned null (tx rejected)" }).eq("id", gameId);
       }
     } catch (payoutError) {
-      console.error("Payout failed:", payoutError);
+      const errMsg = payoutError instanceof Error ? payoutError.message : String(payoutError);
+      console.error("Payout failed:", errMsg);
+      await supabase.from("chicken_games").update({ payout_error: errMsg }).eq("id", gameId);
     }
 
     return new Response(

@@ -19,8 +19,10 @@ interface EscrowTransaction {
   player_a_tx: string | null;
   player_b_tx: string | null;
   payout_tx: string | null;
+  payout_error: string | null;
   platform_fee: number;
   created_at: string;
+  ended_at: string | null;
 }
 
 interface EscrowData {
@@ -57,6 +59,31 @@ function statusColor(status: string) {
     case "depositing": return "text-yellow-500";
     default: return "text-muted-foreground";
   }
+}
+
+function PayoutCell({ tx }: { tx: EscrowTransaction }) {
+  // Active/depositing games — payout not expected yet
+  if (tx.status !== "finished") {
+    return <span className="text-muted-foreground text-[10px]">—</span>;
+  }
+  // Finished with successful payout
+  if (tx.payout_tx) {
+    return <TxLink sig={tx.payout_tx} />;
+  }
+  // Finished with recorded error
+  if (tx.payout_error) {
+    return (
+      <span className="text-destructive font-mono text-[10px] uppercase cursor-help" title={tx.payout_error}>
+        FAILED
+      </span>
+    );
+  }
+  // Finished but no payout and no error — unknown failure
+  return (
+    <span className="text-destructive font-mono text-[10px] uppercase">
+      MISSING
+    </span>
+  );
 }
 
 const EscrowDashboard = ({ walletAddress }: EscrowDashboardProps) => {
@@ -101,6 +128,15 @@ const EscrowDashboard = ({ walletAddress }: EscrowDashboardProps) => {
 
   if (!data) return null;
 
+  // Summary stats
+  const totalDeposits = data.transactions.reduce((sum, tx) => {
+    const deposited = (tx.player_a_tx ? 1 : 0) + (tx.player_b_tx ? 1 : 0);
+    return sum + deposited * tx.stake;
+  }, 0);
+  const totalPayouts = data.transactions.filter((tx) => tx.payout_tx).length;
+  const totalFees = data.transactions.reduce((sum, tx) => sum + (tx.platform_fee || 0), 0);
+  const failedPayouts = data.transactions.filter((tx) => tx.status === "finished" && !tx.payout_tx).length;
+
   return (
     <Card className="border-primary/20 bg-card/60 backdrop-blur">
       <CardHeader>
@@ -133,6 +169,26 @@ const EscrowDashboard = ({ walletAddress }: EscrowDashboardProps) => {
           </div>
         </div>
 
+        {/* Summary Stats */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="rounded-lg border border-border bg-card p-3 text-center">
+            <p className="text-[10px] font-mono text-muted-foreground uppercase">Total Deposits</p>
+            <p className="text-lg font-display text-foreground">{totalDeposits.toFixed(2)} <span className="text-xs text-muted-foreground">SOL</span></p>
+          </div>
+          <div className="rounded-lg border border-border bg-card p-3 text-center">
+            <p className="text-[10px] font-mono text-muted-foreground uppercase">Payouts Sent</p>
+            <p className="text-lg font-display text-primary">{totalPayouts}</p>
+          </div>
+          <div className="rounded-lg border border-border bg-card p-3 text-center">
+            <p className="text-[10px] font-mono text-muted-foreground uppercase">Fees Collected</p>
+            <p className="text-lg font-display text-foreground">{totalFees.toFixed(4)} <span className="text-xs text-muted-foreground">SOL</span></p>
+          </div>
+          <div className="rounded-lg border border-border bg-card p-3 text-center">
+            <p className="text-[10px] font-mono text-muted-foreground uppercase">Failed Payouts</p>
+            <p className={`text-lg font-display ${failedPayouts > 0 ? "text-destructive" : "text-primary"}`}>{failedPayouts}</p>
+          </div>
+        </div>
+
         {/* Transaction History */}
         <div>
           <p className="text-sm font-display text-foreground mb-3">Transaction History ({data.transactions.length})</p>
@@ -143,6 +199,7 @@ const EscrowDashboard = ({ walletAddress }: EscrowDashboardProps) => {
                   <TableHead className="font-mono text-[10px]">Game</TableHead>
                   <TableHead className="font-mono text-[10px]">Players</TableHead>
                   <TableHead className="font-mono text-[10px]">Stake</TableHead>
+                  <TableHead className="font-mono text-[10px]">Fee</TableHead>
                   <TableHead className="font-mono text-[10px]">Status</TableHead>
                   <TableHead className="font-mono text-[10px]">Winner</TableHead>
                   <TableHead className="font-mono text-[10px]">Deposits</TableHead>
@@ -162,6 +219,9 @@ const EscrowDashboard = ({ walletAddress }: EscrowDashboardProps) => {
                       <span className="text-foreground">{tx.player_b ?? "—"}</span>
                     </TableCell>
                     <TableCell className="font-mono text-xs text-foreground">{tx.stake} SOL</TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground">
+                      {tx.platform_fee > 0 ? `${tx.platform_fee.toFixed(3)}` : "—"}
+                    </TableCell>
                     <TableCell>
                       <span className={`font-mono text-[10px] uppercase ${statusColor(tx.status)}`}>
                         {tx.status}
@@ -174,7 +234,7 @@ const EscrowDashboard = ({ walletAddress }: EscrowDashboardProps) => {
                       {!tx.player_a_tx && !tx.player_b_tx && <span className="text-muted-foreground text-[10px]">—</span>}
                     </TableCell>
                     <TableCell>
-                      {tx.payout_tx ? <TxLink sig={tx.payout_tx} /> : <span className="text-muted-foreground text-[10px]">—</span>}
+                      <PayoutCell tx={tx} />
                     </TableCell>
                     <TableCell className="font-mono text-[10px] text-muted-foreground whitespace-nowrap">
                       {new Date(tx.created_at).toLocaleDateString()}
@@ -183,7 +243,7 @@ const EscrowDashboard = ({ walletAddress }: EscrowDashboardProps) => {
                 ))}
                 {data.transactions.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center text-muted-foreground font-mono text-sm py-8">
+                    <TableCell colSpan={9} className="text-center text-muted-foreground font-mono text-sm py-8">
                       No escrow transactions yet.
                     </TableCell>
                   </TableRow>

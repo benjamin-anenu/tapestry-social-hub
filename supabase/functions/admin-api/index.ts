@@ -154,7 +154,7 @@ Deno.serve(async (req) => {
       // Query chicken_games with deposits
       const { data: games } = await supabase
         .from("chicken_games")
-        .select("id, player_a_id, player_b_id, stake_amount, status, winner_id, player_a_deposited, player_b_deposited, player_a_tx, player_b_tx, payout_tx, platform_fee, created_at, ended_at")
+        .select("id, player_a_id, player_b_id, stake_amount, status, winner_id, player_a_deposited, player_b_deposited, player_a_tx, player_b_tx, payout_tx, payout_error, platform_fee, created_at, ended_at")
         .or("player_a_deposited.eq.true,player_b_deposited.eq.true")
         .order("created_at", { ascending: false })
         .limit(50);
@@ -189,6 +189,7 @@ Deno.serve(async (req) => {
         player_a_tx: g.player_a_tx,
         player_b_tx: g.player_b_tx,
         payout_tx: g.payout_tx,
+        payout_error: g.payout_error,
         platform_fee: g.platform_fee,
         created_at: g.created_at,
         ended_at: g.ended_at,
