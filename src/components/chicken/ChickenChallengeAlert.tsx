@@ -129,10 +129,10 @@ const ChickenChallengeAlert = ({ myProfileId, walletAddress }: ChickenChallengeA
     <AnimatePresence>
       {challenge && (
         <motion.div
-          initial={{ opacity: 0, y: 20, scale: 0.95 }}
+          initial={{ opacity: 0, y: -20, scale: 0.95 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: 20, scale: 0.95 }}
-          className="fixed bottom-6 left-4 right-4 z-50 mx-auto max-w-sm rounded-2xl border border-destructive/30 bg-card/95 p-4 shadow-2xl backdrop-blur-md"
+          exit={{ opacity: 0, y: -20, scale: 0.95 }}
+          className="fixed top-20 left-4 right-4 z-50 mx-auto max-w-sm rounded-2xl border border-destructive/30 bg-card/95 p-4 shadow-2xl backdrop-blur-md"
         >
           <div className="flex items-start gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-destructive/10">
