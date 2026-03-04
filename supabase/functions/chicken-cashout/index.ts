@@ -80,7 +80,15 @@ async function sendPayout(winnerAddress: string, lamports: number): Promise<stri
   message[offset++] = 0; message[offset++] = 1; message[offset++] = 12;
   message.set(transferData, offset);
 
-  const cryptoKey = await crypto.subtle.importKey("raw", escrowKeypair.slice(0, 32), { name: "Ed25519" }, false, ["sign"]);
+  // Wrap 32-byte Ed25519 seed in PKCS8 DER for crypto.subtle
+  const pkcs8Header = new Uint8Array([
+    0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70,
+    0x04, 0x22, 0x04, 0x20,
+  ]);
+  const pkcs8Key = new Uint8Array(pkcs8Header.length + 32);
+  pkcs8Key.set(pkcs8Header, 0);
+  pkcs8Key.set(escrowKeypair.slice(0, 32), pkcs8Header.length);
+  const cryptoKey = await crypto.subtle.importKey("pkcs8", pkcs8Key, { name: "Ed25519" }, false, ["sign"]);
   const signature = new Uint8Array(await crypto.subtle.sign("Ed25519", cryptoKey, message));
 
   const fullTx = new Uint8Array(1 + 64 + message.length);
