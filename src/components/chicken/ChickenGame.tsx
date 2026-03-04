@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
@@ -11,6 +11,12 @@ interface Candle {
   high: number;
   low: number;
   close: number;
+}
+
+interface Trade {
+  action: "buy" | "sell";
+  time: number;
+  price: number;
 }
 
 interface ChickenGameProps {
@@ -35,6 +41,7 @@ const ChickenGame = ({
   const [oppValue, setOppValue] = useState(1000);
   const [trading, setTrading] = useState(false);
   const [gameDuration, setGameDuration] = useState(60);
+  const [myTrades, setMyTrades] = useState<Trade[]>([]);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const gameEndedRef = useRef(false);
 
@@ -42,6 +49,14 @@ const ChickenGame = ({
   const myValue = Math.round((myCash + myTokens * currentPrice) * 100) / 100;
   const pnl = Math.round((myValue - 1000) * 100) / 100;
   const timeLeft = Math.max(0, gameDuration - counter);
+
+  const isFreePlay = stakeAmount === 0;
+
+  // Memoize chart data — sliding window of last 30 candles
+  const chartCandles = useMemo(() => {
+    if (priceHistory.length <= 30) return priceHistory;
+    return priceHistory.slice(-30);
+  }, [priceHistory]);
 
   // Subscribe to realtime updates
   useEffect(() => {
@@ -71,12 +86,15 @@ const ChickenGame = ({
           if (isA) {
             setMyCash(Number(game.player_a_cash));
             setMyTokens(Number(game.player_a_tokens));
-            // Opponent value
+            const trades = game.player_a_trades as Trade[];
+            if (Array.isArray(trades)) setMyTrades(trades);
             const price = Array.isArray(ph) && ph.length > 0 ? ph[ph.length - 1].close : 100;
             setOppValue(Math.round((Number(game.player_b_cash) + Number(game.player_b_tokens) * price) * 100) / 100);
           } else {
             setMyCash(Number(game.player_b_cash));
             setMyTokens(Number(game.player_b_tokens));
+            const trades = game.player_b_trades as Trade[];
+            if (Array.isArray(trades)) setMyTrades(trades);
             const price = Array.isArray(ph) && ph.length > 0 ? ph[ph.length - 1].close : 100;
             setOppValue(Math.round((Number(game.player_a_cash) + Number(game.player_a_tokens) * price) * 100) / 100);
           }
@@ -145,7 +163,7 @@ const ChickenGame = ({
       animate={{ opacity: 1 }}
       className="flex flex-col gap-3 w-full max-w-lg mx-auto px-2"
     >
-      {/* Timer + Pot Header */}
+      {/* Timer + Price Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground uppercase tracking-wider">$CHKN</span>
@@ -158,15 +176,22 @@ const ChickenGame = ({
         </div>
       </div>
 
-      {/* Pot info */}
-      <div className="flex items-center justify-between text-xs text-muted-foreground">
-        <span>POT: {potTotal} SOL</span>
-        <span>Winner gets {(potTotal * 0.9).toFixed(4)} SOL</span>
-      </div>
+      {/* Pot info — hidden for free play */}
+      {!isFreePlay && (
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>POT: {potTotal} SOL</span>
+          <span>Winner gets {(potTotal * 0.9).toFixed(4)} SOL</span>
+        </div>
+      )}
+      {isFreePlay && (
+        <div className="text-xs text-muted-foreground text-center">
+          🏆 Free Play — Winner gets bragging rights
+        </div>
+      )}
 
       {/* Chart */}
       <div className="rounded-xl border border-border bg-card overflow-hidden" style={{ height: 220 }}>
-        <ChickenChart candles={priceHistory} />
+        <ChickenChart candles={chartCandles} trades={myTrades} />
       </div>
 
       {/* Portfolio comparison */}
@@ -198,7 +223,7 @@ const ChickenGame = ({
       </div>
 
       <p className="text-[10px] text-center text-muted-foreground">
-        Buy low, sell high. Highest portfolio value when timer hits 0 wins the SOL pot.
+        Buy low, sell high. Highest portfolio value when timer hits 0 {isFreePlay ? "wins!" : "wins the SOL pot."}
       </p>
     </motion.div>
   );

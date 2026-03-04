@@ -25,28 +25,22 @@ interface Candle {
 function generateNextCandle(history: Candle[], tickIndex: number): Candle {
   const prevPrice = history.length > 0 ? history[history.length - 1].close : 100;
 
-  // Volatility: base 3%, occasional spikes
   let volatility = 0.03;
-  if (Math.random() < 0.08) volatility = 0.12 + Math.random() * 0.1; // 8% chance of big move
-  if (Math.random() < 0.03) volatility = 0.2 + Math.random() * 0.15; // 3% chance of huge wick
+  if (Math.random() < 0.08) volatility = 0.12 + Math.random() * 0.1;
+  if (Math.random() < 0.03) volatility = 0.2 + Math.random() * 0.15;
 
-  // Momentum: 30% chance to continue previous direction
   let momentum = 0;
   if (history.length >= 2) {
     const prevMove = history[history.length - 1].close - history[history.length - 2].close;
     if (Math.random() < 0.3) momentum = Math.sign(prevMove) * 0.01;
   }
 
-  // Mean reversion toward 100
   const meanReversion = (100 - prevPrice) * 0.005;
-
-  // Base drift
   const drift = 0.001;
 
   const change = drift + momentum + meanReversion + volatility * randomNormal();
   const closePrice = Math.max(1, prevPrice * (1 + change));
 
-  // Generate realistic OHLC
   const open = prevPrice;
   const mid1 = open + (closePrice - open) * (0.3 + Math.random() * 0.4);
   const wickUp = Math.abs(randomNormal()) * volatility * prevPrice * 0.5;
@@ -107,7 +101,7 @@ serve(async (req) => {
     const newCandle = generateNextCandle(history, newCounter);
     const newHistory = [...history, newCandle];
 
-    // Game over at 60 ticks
+    // Game over at configured duration
     if (newCounter >= game.game_duration) {
       const finalPrice = newCandle.close;
       const aValue = Number(game.player_a_cash) + Number(game.player_a_tokens) * finalPrice;
@@ -136,8 +130,8 @@ serve(async (req) => {
         .eq("id", gameId)
         .eq("status", "active");
 
-      // If there's a winner, trigger payout
-      if (winnerId) {
+      // Only trigger payout if there's a winner AND it's a staked game
+      if (winnerId && Number(game.stake_amount) > 0) {
         const { data: winnerProfile } = await supabase
           .from("profiles")
           .select("wallet_address")
@@ -146,7 +140,6 @@ serve(async (req) => {
 
         if (winnerProfile) {
           try {
-            // Fire and forget payout via cashout function logic
             await supabase.functions.invoke("chicken-cashout", {
               body: { gameId, walletAddress: winnerProfile.wallet_address, autoFinish: true },
             });
@@ -170,7 +163,7 @@ serve(async (req) => {
       );
     }
 
-    // Normal tick - generate price candle
+    // Normal tick
     const { error: updateErr } = await supabase
       .from("chicken_games")
       .update({
@@ -179,7 +172,7 @@ serve(async (req) => {
       })
       .eq("id", gameId)
       .eq("status", "active")
-      .eq("counter", game.counter); // Optimistic lock
+      .eq("counter", game.counter);
 
     if (updateErr) throw updateErr;
 

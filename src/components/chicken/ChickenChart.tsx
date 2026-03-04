@@ -1,4 +1,5 @@
-import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, ReferenceLine } from "recharts";
+import { useMemo } from "react";
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, ReferenceLine, ReferenceDot } from "recharts";
 
 interface Candle {
   time: number;
@@ -8,11 +9,71 @@ interface Candle {
   close: number;
 }
 
-interface ChickenChartProps {
-  candles: Candle[];
+interface Trade {
+  action: "buy" | "sell";
+  time: number;
+  price: number;
 }
 
-const ChickenChart = ({ candles }: ChickenChartProps) => {
+interface ChickenChartProps {
+  candles: Candle[];
+  trades?: Trade[];
+}
+
+const BuyDot = (props: { cx?: number; cy?: number }) => {
+  if (props.cx == null || props.cy == null) return null;
+  return (
+    <polygon
+      points={`${props.cx},${props.cy - 6} ${props.cx - 5},${props.cy + 4} ${props.cx + 5},${props.cy + 4}`}
+      fill="#22c55e"
+      stroke="#15803d"
+      strokeWidth={1}
+    />
+  );
+};
+
+const SellDot = (props: { cx?: number; cy?: number }) => {
+  if (props.cx == null || props.cy == null) return null;
+  return (
+    <polygon
+      points={`${props.cx},${props.cy + 6} ${props.cx - 5},${props.cy - 4} ${props.cx + 5},${props.cy - 4}`}
+      fill="#ef4444"
+      stroke="#b91c1c"
+      strokeWidth={1}
+    />
+  );
+};
+
+const ChickenChart = ({ candles, trades = [] }: ChickenChartProps) => {
+  const data = useMemo(
+    () => candles.map((c) => ({ time: c.time, price: c.close })),
+    [candles]
+  );
+
+  const { firstPrice, lastPrice, isUp, color } = useMemo(() => {
+    if (candles.length === 0) return { firstPrice: 100, lastPrice: 100, isUp: true, color: "#22c55e" };
+    const fp = candles[0].open;
+    const lp = candles[candles.length - 1].close;
+    const up = lp >= fp;
+    return { firstPrice: fp, lastPrice: lp, isUp: up, color: up ? "#22c55e" : "#ef4444" };
+  }, [candles]);
+
+  const { minPrice, maxPrice } = useMemo(() => {
+    if (candles.length === 0) return { minPrice: 90, maxPrice: 110 };
+    const prices = candles.flatMap((c) => [c.high, c.low]);
+    return {
+      minPrice: Math.min(...prices) * 0.98,
+      maxPrice: Math.max(...prices) * 1.02,
+    };
+  }, [candles]);
+
+  const visibleTrades = useMemo(() => {
+    if (trades.length === 0 || candles.length === 0) return [];
+    const minTime = candles[0].time;
+    const maxTime = candles[candles.length - 1].time;
+    return trades.filter((t) => t.time >= minTime && t.time <= maxTime);
+  }, [trades, candles]);
+
   if (candles.length === 0) {
     return (
       <div className="flex h-full items-center justify-center text-muted-foreground text-sm">
@@ -20,22 +81,6 @@ const ChickenChart = ({ candles }: ChickenChartProps) => {
       </div>
     );
   }
-
-  const data = candles.map((c) => ({
-    time: c.time,
-    price: c.close,
-    high: c.high,
-    low: c.low,
-  }));
-
-  const firstPrice = candles[0].open;
-  const lastPrice = candles[candles.length - 1].close;
-  const isUp = lastPrice >= firstPrice;
-  const color = isUp ? "#22c55e" : "#ef4444";
-
-  const prices = candles.flatMap((c) => [c.high, c.low]);
-  const minPrice = Math.min(...prices) * 0.98;
-  const maxPrice = Math.max(...prices) * 1.02;
 
   return (
     <ResponsiveContainer width="100%" height="100%">
@@ -56,8 +101,18 @@ const ChickenChart = ({ candles }: ChickenChartProps) => {
           strokeWidth={2}
           fill="url(#chartGrad)"
           dot={false}
-          isAnimationActive={false}
+          isAnimationActive={true}
+          animationDuration={300}
+          animationEasing="linear"
         />
+        {visibleTrades.map((t, i) => (
+          <ReferenceDot
+            key={`trade-${i}`}
+            x={t.time}
+            y={t.price}
+            shape={t.action === "buy" ? <BuyDot /> : <SellDot />}
+          />
+        ))}
       </AreaChart>
     </ResponsiveContainer>
   );

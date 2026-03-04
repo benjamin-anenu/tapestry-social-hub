@@ -5,7 +5,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Wallet, Copy, ExternalLink, Loader2, RefreshCw } from "lucide-react";
+import { Wallet, Copy, ExternalLink, Loader2, RefreshCw, RotateCcw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 
@@ -61,28 +61,56 @@ function statusColor(status: string) {
   }
 }
 
-function PayoutCell({ tx }: { tx: EscrowTransaction }) {
-  // Active/depositing games — payout not expected yet
+interface PayoutCellProps {
+  tx: EscrowTransaction;
+  walletAddress: string;
+  onRetrySuccess: () => void;
+}
+
+function PayoutCell({ tx, walletAddress, onRetrySuccess }: PayoutCellProps) {
+  const [retrying, setRetrying] = useState(false);
+
+  const handleRetry = async () => {
+    setRetrying(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("admin-api", {
+        body: { action: "retry_payout", walletAddress, gameId: tx.id },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      toast({ title: "Payout sent", description: `TX: ${data.payout_tx?.slice(0, 12)}…` });
+      onRetrySuccess();
+    } catch (e: unknown) {
+      toast({ title: "Retry failed", description: e instanceof Error ? e.message : "Unknown error", variant: "destructive" });
+    } finally {
+      setRetrying(false);
+    }
+  };
+
   if (tx.status !== "finished") {
     return <span className="text-muted-foreground text-[10px]">—</span>;
   }
-  // Finished with successful payout
   if (tx.payout_tx) {
     return <TxLink sig={tx.payout_tx} />;
   }
-  // Finished with recorded error
-  if (tx.payout_error) {
-    return (
-      <span className="text-destructive font-mono text-[10px] uppercase cursor-help" title={tx.payout_error}>
-        FAILED
-      </span>
-    );
-  }
-  // Finished but no payout and no error — unknown failure
+
+  // Failed or missing — show retry button
+  const label = tx.payout_error ? "FAILED" : "MISSING";
   return (
-    <span className="text-destructive font-mono text-[10px] uppercase">
-      MISSING
-    </span>
+    <div className="flex items-center gap-1">
+      <span className="text-destructive font-mono text-[10px] uppercase cursor-help" title={tx.payout_error || "No payout recorded"}>
+        {label}
+      </span>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-5 w-5"
+        onClick={handleRetry}
+        disabled={retrying}
+      >
+        {retrying ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
+      </Button>
+    </div>
   );
 }
 
@@ -218,7 +246,9 @@ const EscrowDashboard = ({ walletAddress }: EscrowDashboardProps) => {
                       <span className="text-muted-foreground mx-1">vs</span>
                       <span className="text-foreground">{tx.player_b ?? "—"}</span>
                     </TableCell>
-                    <TableCell className="font-mono text-xs text-foreground">{tx.stake} SOL</TableCell>
+                    <TableCell className="font-mono text-xs text-foreground">
+                      {tx.stake > 0 ? `${tx.stake} SOL` : "FREE"}
+                    </TableCell>
                     <TableCell className="font-mono text-xs text-muted-foreground">
                       {tx.platform_fee > 0 ? `${tx.platform_fee.toFixed(3)}` : "—"}
                     </TableCell>
@@ -234,7 +264,7 @@ const EscrowDashboard = ({ walletAddress }: EscrowDashboardProps) => {
                       {!tx.player_a_tx && !tx.player_b_tx && <span className="text-muted-foreground text-[10px]">—</span>}
                     </TableCell>
                     <TableCell>
-                      <PayoutCell tx={tx} />
+                      <PayoutCell tx={tx} walletAddress={walletAddress} onRetrySuccess={fetchEscrow} />
                     </TableCell>
                     <TableCell className="font-mono text-[10px] text-muted-foreground whitespace-nowrap">
                       {new Date(tx.created_at).toLocaleDateString()}

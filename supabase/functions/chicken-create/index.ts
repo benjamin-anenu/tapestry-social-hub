@@ -17,11 +17,15 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    const { walletAddress, stakeAmount = 0.05, targetProfileId } = await req.json();
+    const { walletAddress, stakeAmount = 0.05, targetProfileId, gameDuration = 60 } = await req.json();
 
     if (!walletAddress) {
       throw new Error("walletAddress is required");
     }
+
+    // Clamp duration
+    const duration = Math.min(Math.max(Math.round(gameDuration), 10), 300);
+    const isFreePlay = stakeAmount === 0;
 
     // Get or create profile
     let { data: profile } = await supabase
@@ -46,7 +50,6 @@ serve(async (req) => {
 
     // === FLOW 1: Friend Challenge (targeted) ===
     if (targetProfileId) {
-      // Check if there's already a pending challenge between these two
       const { data: existing } = await supabase
         .from("chicken_games")
         .select("id")
@@ -72,6 +75,7 @@ serve(async (req) => {
           player_a_id: profile.id,
           challenge_target_id: targetProfileId,
           stake_amount: stakeAmount,
+          game_duration: duration,
           status: "challenge_pending",
         })
         .select("id")
@@ -90,12 +94,13 @@ serve(async (req) => {
     }
 
     // === FLOW 2: Random Arena Matching (no target) ===
-    // Look for open waiting games (no challenge target)
+    // Match by stake AND duration
     const { data: waitingGame } = await supabase
       .from("chicken_games")
       .select("*")
       .eq("status", "waiting")
       .eq("stake_amount", stakeAmount)
+      .eq("game_duration", duration)
       .is("player_b_id", null)
       .is("challenge_target_id", null)
       .neq("player_a_id", profile.id)
@@ -104,13 +109,19 @@ serve(async (req) => {
       .single();
 
     if (waitingGame) {
-      // Join existing game
+      // For free play, go straight to active (skip depositing)
+      const newStatus = isFreePlay ? "active" : "depositing";
+      const updateFields: Record<string, unknown> = {
+        player_b_id: profile.id,
+        status: newStatus,
+      };
+      if (isFreePlay) {
+        updateFields.started_at = new Date().toISOString();
+      }
+
       const { error: updateErr } = await supabase
         .from("chicken_games")
-        .update({
-          player_b_id: profile.id,
-          status: "depositing",
-        })
+        .update(updateFields)
         .eq("id", waitingGame.id);
 
       if (updateErr) throw updateErr;
@@ -131,6 +142,7 @@ serve(async (req) => {
       .insert({
         player_a_id: profile.id,
         stake_amount: stakeAmount,
+        game_duration: duration,
         status: "waiting",
       })
       .select("id")
