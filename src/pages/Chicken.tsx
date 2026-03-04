@@ -5,6 +5,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
 import ChickenDeposit from "@/components/chicken/ChickenDeposit";
 import ChickenGame from "@/components/chicken/ChickenGame";
@@ -29,6 +30,8 @@ interface ResultData {
   oppValue?: number;
 }
 
+const DURATION_OPTIONS = [60, 90, 120, 180];
+
 const Chicken = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -46,8 +49,12 @@ const Chicken = () => {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [stakeAmount, setStakeAmount] = useState(0.05);
+  const [freePlay, setFreePlay] = useState(false);
+  const [gameDuration, setGameDuration] = useState(60);
   const [autoTriggered, setAutoTriggered] = useState(false);
   const [waitCountdown, setWaitCountdown] = useState(30);
+
+  const effectiveStake = freePlay ? 0 : stakeAmount;
 
   // Redirect if no wallet
   useEffect(() => {
@@ -86,11 +93,18 @@ const Chicken = () => {
         (payload) => {
           const game = payload.new as Record<string, unknown>;
 
+          // For free play, skip deposit phase — go straight to active
+          if (game.status === "depositing" && effectiveStake === 0) {
+            // The backend should set it to active directly, but handle edge case
+            setPhase("active");
+            return;
+          }
+
           if (game.status === "depositing" && (phase === "waiting" || phase === "lobby")) {
             setPhase("deposit");
           }
 
-          if (game.status === "active" && phase === "deposit") {
+          if (game.status === "active" && (phase === "deposit" || phase === "waiting")) {
             setPhase("active");
           }
 
@@ -104,7 +118,7 @@ const Chicken = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [gameState?.gameId, gameState?.role, phase]);
+  }, [gameState?.gameId, gameState?.role, phase, effectiveStake]);
 
   // 30-second timeout for arena random matching (not friend challenges)
   useEffect(() => {
@@ -148,7 +162,7 @@ const Chicken = () => {
       const { escrowPublicKey, profileId } = await getEscrowAndProfile();
 
       const { data, error: createErr } = await supabase.functions.invoke("chicken-create", {
-        body: { walletAddress, stakeAmount, targetProfileId: targetId },
+        body: { walletAddress, stakeAmount: effectiveStake, targetProfileId: targetId, gameDuration },
       });
       if (createErr) throw new Error(createErr.message);
       if (data?.error) throw new Error(data.error);
@@ -156,7 +170,7 @@ const Chicken = () => {
       setGameState({
         gameId: data.gameId,
         role: "player_a",
-        stakeAmount,
+        stakeAmount: effectiveStake,
         escrowPublicKey,
         myProfileId: profileId,
       });
@@ -183,14 +197,17 @@ const Chicken = () => {
         .eq("id", gameId)
         .single();
 
+      const joinStake = game?.stake_amount || 0;
+
       setGameState({
         gameId,
         role: "player_b",
-        stakeAmount: game?.stake_amount || 0.05,
+        stakeAmount: joinStake,
         escrowPublicKey,
         myProfileId: profileId,
       });
-      setPhase("deposit");
+      // If free play (stake=0), go straight to active phase
+      setPhase(joinStake === 0 ? "active" : "deposit");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
@@ -207,7 +224,7 @@ const Chicken = () => {
       const { escrowPublicKey, profileId } = await getEscrowAndProfile();
 
       const { data, error: createErr } = await supabase.functions.invoke("chicken-create", {
-        body: { walletAddress, stakeAmount },
+        body: { walletAddress, stakeAmount: effectiveStake, gameDuration },
       });
       if (createErr) throw new Error(createErr.message);
       if (data?.error) throw new Error(data.error);
@@ -215,13 +232,14 @@ const Chicken = () => {
       setGameState({
         gameId: data.gameId,
         role: data.role,
-        stakeAmount,
+        stakeAmount: effectiveStake,
         escrowPublicKey,
         myProfileId: profileId,
       });
 
       if (data.status === "matched") {
-        setPhase("deposit");
+        // Free play skips deposit
+        setPhase(effectiveStake === 0 ? "active" : "deposit");
       } else {
         setPhase("waiting");
       }
@@ -294,31 +312,70 @@ const Chicken = () => {
                 <Flame className="h-20 w-20 text-orange-500" />
               </motion.div>
               <h1 className="font-display text-3xl font-black">
-                60-SECOND TRADING BATTLE
+                {gameDuration}-SECOND TRADING BATTLE
               </h1>
               <p className="max-w-sm text-muted-foreground">
                 Trade <span className="font-bold text-primary">$CHKN</span> on a live
                 market chart. Buy low, sell high. Highest portfolio value when the timer
                 hits zero{" "}
-                <span className="font-bold text-primary">WINS the SOL pot</span>. Loser
-                is the{" "}
+                {freePlay ? (
+                  <span className="font-bold text-primary">WINS bragging rights</span>
+                ) : (
+                  <span className="font-bold text-primary">WINS the SOL pot</span>
+                )}
+                . Loser is the{" "}
                 <span className="font-bold text-destructive">CHICKEN 🐔</span>.
               </p>
 
-              <div className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4">
-                <label className="text-sm text-muted-foreground">Stake (SOL)</label>
-                <Input
-                  type="number"
-                  min="0.01"
-                  max="1.0"
-                  step="0.01"
-                  value={stakeAmount}
-                  onChange={(e) => setStakeAmount(parseFloat(e.target.value) || 0.01)}
-                  className="rounded-lg border-border/50 bg-muted/50 font-mono text-2xl font-bold text-center"
+              {/* Free Play Toggle */}
+              <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3">
+                <span className={`text-sm font-medium ${freePlay ? "text-muted-foreground" : "text-foreground"}`}>
+                  Stake SOL
+                </span>
+                <Switch
+                  checked={freePlay}
+                  onCheckedChange={setFreePlay}
                 />
-                <p className="text-xs text-muted-foreground mt-1">
-                  Winner gets {(stakeAmount * 2 * 0.9).toFixed(4)} SOL (10% fee)
-                </p>
+                <span className={`text-sm font-medium ${freePlay ? "text-foreground" : "text-muted-foreground"}`}>
+                  Free Play
+                </span>
+              </div>
+
+              {/* Stake Input (hidden in free play) */}
+              {!freePlay && (
+                <div className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4">
+                  <label className="text-sm text-muted-foreground">Stake (SOL)</label>
+                  <Input
+                    type="number"
+                    min="0.01"
+                    max="1.0"
+                    step="0.01"
+                    value={stakeAmount}
+                    onChange={(e) => setStakeAmount(parseFloat(e.target.value) || 0.01)}
+                    className="rounded-lg border-border/50 bg-muted/50 font-mono text-2xl font-bold text-center"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Winner gets {(stakeAmount * 2 * 0.9).toFixed(4)} SOL (10% fee)
+                  </p>
+                </div>
+              )}
+
+              {/* Duration Selector */}
+              <div className="flex flex-col gap-2 items-center">
+                <label className="text-xs text-muted-foreground uppercase tracking-wider">Duration</label>
+                <div className="flex gap-2">
+                  {DURATION_OPTIONS.map((d) => (
+                    <Button
+                      key={d}
+                      variant={gameDuration === d ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setGameDuration(d)}
+                      className="font-mono text-sm"
+                    >
+                      {d}s
+                    </Button>
+                  ))}
+                </div>
               </div>
 
               <Button
@@ -431,7 +488,7 @@ const Chicken = () => {
                 payout={resultData.payout}
                 payoutTx={resultData.payoutTx}
                 cashedOutAt={resultData.cashedOutAt}
-                stakeAmount={stakeAmount}
+                stakeAmount={effectiveStake}
                 myValue={resultData.myValue}
                 oppValue={resultData.oppValue}
                 onPlayAgain={handlePlayAgain}
