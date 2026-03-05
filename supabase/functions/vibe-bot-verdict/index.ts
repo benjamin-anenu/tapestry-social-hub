@@ -174,6 +174,30 @@ Deno.serve(async (req) => {
         { onConflict: "participant_a,participant_b" }
       );
 
+      // Tapestry follow
+      const apiKey = Deno.env.get("TAPESTRY_API_KEY");
+      if (apiKey) {
+        const [{ data: myP }, { data: botP }] = await Promise.all([
+          supabase.from("profiles").select("username").eq("id", profile.id).single(),
+          supabase.from("profiles").select("username").eq("id", botProfileId).single(),
+        ]);
+        if (myP?.username && botP?.username) {
+          const tapUrl = "https://api.usetapestry.dev/api/v1";
+          await Promise.allSettled([
+            fetch(`${tapUrl}/followers?apiKey=${apiKey}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ startId: myP.username, endId: botP.username }),
+            }),
+            fetch(`${tapUrl}/followers?apiKey=${apiKey}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ startId: botP.username, endId: myP.username }),
+            }),
+          ]);
+        }
+      }
+
       // Increment vibe scores
       await Promise.allSettled([
         supabase.rpc("increment_vibe_score" as never, { profile_id: profile.id } as never),

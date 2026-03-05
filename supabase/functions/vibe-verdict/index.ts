@@ -103,7 +103,7 @@ Deno.serve(async (req) => {
           supabase.from("profiles").select("username").eq("id", partnerId).single(),
         ]);
         if (myP?.username && partnerP?.username) {
-          const tapUrl = "https://api.usetapestry.dev/v1";
+          const tapUrl = "https://api.usetapestry.dev/api/v1";
           await Promise.allSettled([
             fetch(`${tapUrl}/followers?apiKey=${apiKey}`, {
               method: "POST",
