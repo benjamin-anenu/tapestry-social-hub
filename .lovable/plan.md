@@ -1,20 +1,26 @@
 
 
-## Root Cause: `vite-plugin-pwa` Version Incompatibility
+## Diagnosis
 
-The `package.json` has `"vite-plugin-pwa": "^1.2.0"` but the project uses **Vite 5** (`"vite": "^5.4.19"`). The `vite-plugin-pwa` 1.x series requires **Vite 6**. This version mismatch causes the production build to fail silently with the generic "failed to build" errors you're seeing.
+The `vite-plugin-pwa` version in `package.json` (^0.21.2) and `package-lock.json` (0.21.2) are already correct and compatible with Vite 5. The dependency fix has been applied successfully in previous iterations, yet the build still fails with a completely generic "failed to build" error (no stack trace, no module name).
 
-The preview works fine because the dev server is more lenient, but the publish build (`vite build`) crashes due to the incompatibility.
+This points to the PWA plugin itself crashing during the production build (workbox asset generation, service worker compilation, or manifest injection). The dev server doesn't exercise those code paths, which is why preview works fine.
 
-Previous attempts to fix this didn't persist properly in `package.json`.
+## Plan: Remove PWA from the build pipeline
 
-## Fix
+Since you want to ship now, the fastest path is to remove `vite-plugin-pwa` from the Vite plugin chain so the build succeeds immediately. The app will still work perfectly — it just won't register a service worker or offer offline/install-to-home-screen functionality until PWA is re-enabled later.
 
-**One change — downgrade `vite-plugin-pwa` to the latest 0.x release compatible with Vite 5:**
+### Changes
 
-| File | Change |
-|------|--------|
-| `package.json` line 71 | Change `"vite-plugin-pwa": "^1.2.0"` to `"vite-plugin-pwa": "^0.21.1"` |
+| File | What |
+|------|------|
+| `vite.config.ts` | Remove the `VitePWA(...)` call from the plugins array. Remove the import. |
+| `package.json` | Remove `vite-plugin-pwa` from dependencies (cleanup) |
+| `index.html` | Remove `<link rel="manifest" href="/manifest.webmanifest" />` (no longer generated) |
 
-This is the only change needed. After this, publishing should succeed immediately.
+The `src/components/pwa/InstallPrompt.tsx` and `/install` route can stay — they'll just be inert since no service worker will be registered. No runtime errors.
+
+### After shipping
+
+Once published, PWA can be re-added by restoring the plugin with a confirmed-working configuration.
 
