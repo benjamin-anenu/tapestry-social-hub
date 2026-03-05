@@ -2,25 +2,23 @@
 
 ## Diagnosis
 
-The `vite-plugin-pwa` version in `package.json` (^0.21.2) and `package-lock.json` (0.21.2) are already correct and compatible with Vite 5. The dependency fix has been applied successfully in previous iterations, yet the build still fails with a completely generic "failed to build" error (no stack trace, no module name).
+The build error is completely generic — `"failed to build: "` with an empty message. The Vite config and `package.json` look clean after the PWA removal. However, there are **two potential issues**:
 
-This points to the PWA plugin itself crashing during the production build (workbox asset generation, service worker compilation, or manifest injection). The dev server doesn't exercise those code paths, which is why preview works fine.
+1. **Conflicting lockfiles**: The project root contains `bun.lockb`, `bun.lock`, AND `package-lock.json` — three lockfiles from two package managers. This can cause the build system to resolve dependencies incorrectly or pick the wrong lockfile.
 
-## Plan: Remove PWA from the build pipeline
+2. **Missing direct dependency**: `@solana/wallet-adapter-base` is imported in `WalletProvider.tsx` but is not listed in `package.json`. It works as a transitive dependency of `@solana/wallet-adapter-react`, but during production builds with strict resolution, this can fail.
 
-Since you want to ship now, the fastest path is to remove `vite-plugin-pwa` from the Vite plugin chain so the build succeeds immediately. The app will still work perfectly — it just won't register a service worker or offer offline/install-to-home-screen functionality until PWA is re-enabled later.
+## Plan
 
-### Changes
+### Step 1: Remove conflicting Bun lockfiles
+Delete `bun.lockb` and `bun.lock` from the project. The build system uses npm (`package-lock.json`), so these are stale artifacts that can interfere.
 
-| File | What |
-|------|------|
-| `vite.config.ts` | Remove the `VitePWA(...)` call from the plugins array. Remove the import. |
-| `package.json` | Remove `vite-plugin-pwa` from dependencies (cleanup) |
-| `index.html` | Remove `<link rel="manifest" href="/manifest.webmanifest" />` (no longer generated) |
+### Step 2: Add missing direct dependency
+Add `@solana/wallet-adapter-base` to `package.json` dependencies since it's directly imported.
 
-The `src/components/pwa/InstallPrompt.tsx` and `/install` route can stay — they'll just be inert since no service worker will be registered. No runtime errors.
-
-### After shipping
-
-Once published, PWA can be re-added by restoring the plugin with a confirmed-working configuration.
+| File | Change |
+|------|--------|
+| `bun.lockb` | Delete |
+| `bun.lock` | Delete |
+| `package.json` | Add `"@solana/wallet-adapter-base": "^0.9.25"` to dependencies |
 
