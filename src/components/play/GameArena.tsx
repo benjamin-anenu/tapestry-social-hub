@@ -137,7 +137,7 @@ const GameArena = ({ gameId, role, isBot, walletAddress }: GameArenaProps) => {
     setSendingChat(true);
     try {
       await supabase.functions.invoke("player-chat", {
-        body: { gameId, message: text, puzzleValues: values },
+        body: { gameId, message: text, puzzleValues: values, walletAddress },
       });
     } catch (err) {
       console.error("Send chat error:", err);
@@ -170,7 +170,7 @@ const GameArena = ({ gameId, role, isBot, walletAddress }: GameArenaProps) => {
       // Notify bot about wrong guess so it can react (ignore errors silently)
       if (game?.status !== "completed") {
         supabase.functions.invoke("player-chat", {
-          body: { gameId, message: "__WRONG_GUESS__", puzzleValues: values },
+          body: { gameId, message: "__WRONG_GUESS__", puzzleValues: values, walletAddress },
         }).catch(() => {});
       }
     }

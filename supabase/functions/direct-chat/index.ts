@@ -57,6 +57,12 @@ Deno.serve(async (req) => {
     }
     if (text.length > 500) throw new Error("Message too long");
 
+    // Validate UUID format to prevent PostgREST filter injection
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(senderProfileId) || !uuidRegex.test(receiverProfileId)) {
+      throw new Error("Invalid profile ID format");
+    }
+
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
