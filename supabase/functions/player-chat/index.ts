@@ -18,9 +18,26 @@ serve(async (req) => {
     const lovableApiKey = Deno.env.get("LOVABLE_API_KEY")!;
     const supabase = createClient(supabaseUrl, serviceKey);
 
-    const { gameId, message, puzzleValues } = await req.json();
+    const { gameId, message, puzzleValues, walletAddress } = await req.json();
     if (!gameId || !message) {
       return new Response(JSON.stringify({ error: "gameId and message required" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Validate UUID format
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(gameId)) {
+      return new Response(JSON.stringify({ error: "Invalid gameId format" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Verify sender identity — walletAddress must match a participant in the game
+    if (!walletAddress || typeof walletAddress !== "string") {
+      return new Response(JSON.stringify({ error: "walletAddress required for sender identity" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -43,6 +60,20 @@ serve(async (req) => {
     if (game.status === "completed") {
       return new Response(JSON.stringify({ error: "Game already ended" }), {
         status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Verify sender is a participant in this game
+    const { data: senderProfile } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("wallet_address", walletAddress)
+      .single();
+
+    if (!senderProfile || (senderProfile.id !== game.hunter_id && senderProfile.id !== game.hunted_id)) {
+      return new Response(JSON.stringify({ error: "Not a participant in this game" }), {
+        status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
